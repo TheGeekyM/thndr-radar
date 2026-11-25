@@ -95,6 +95,53 @@ export function analyze(sym, closes) {
   };
 }
 
+/**
+ * Backtest the app's own rules on past daily closes (buy and sell at the close; no fees, no slippage):
+ *  rsi:  buy when RSI crosses below 30; sell when it crosses above 70, at -10%, or after 60 sessions
+ *  plan: buy when the price is in plan()'s buy zone with risk/reward >= 1.5; sell at Target 1 or the stop, or after 60 sessions
+ * Returns per strategy { trades, wins, winRate, avgPct, totalPct (compounded), worstPct, open } and buy-and-hold %.
+ */
+export function backtest(closes) {
+  const MAX_DAYS = 60;
+  const summary = (list, open) => {
+    const wins = list.filter((t) => t.pct > 0).length;
+    return {
+      trades: list.length, wins, winRate: list.length ? wins / list.length : null,
+      avgPct: list.length ? list.reduce((a, t) => a + t.pct, 0) / list.length : null,
+      totalPct: list.length ? (list.reduce((a, t) => a * (1 + t.pct / 100), 1) - 1) * 100 : null,
+      worstPct: list.length ? Math.min(...list.map((t) => t.pct)) : null,
+      open, list: list.slice(-10),
+    };
+  };
+  const pct = (a, b) => ((b - a) / a) * 100;
+  // RSI strategy
+  const r = rsiSeries(closes), rsiAt = (i) => r[i - RSI_LEN];
+  let rsiTrades = [], pos = null;
+  for (let i = RSI_LEN + 1; i < closes.length; i++) {
+    const prev = rsiAt(i - 1), cur = rsiAt(i), c = closes[i];
+    if (!pos) { if (prev >= RSI_BUY && cur < RSI_BUY) pos = { i, price: c }; continue; }
+    if ((prev <= RSI_SELL && cur > RSI_SELL) || c <= pos.price * 0.9 || i - pos.i >= MAX_DAYS) {
+      rsiTrades.push({ in: pos.i, out: i, buy: pos.price, sell: c, pct: pct(pos.price, c) }); pos = null;
+    }
+  }
+  const rsiOpen = pos ? { buy: pos.price, nowPct: pct(pos.price, closes.at(-1)), days: closes.length - 1 - pos.i } : null;
+  // Trade-plan strategy
+  let planTrades = []; pos = null;
+  for (let i = 60; i < closes.length; i++) {
+    const c = closes[i];
+    if (!pos) {
+      const p = plan(closes.slice(0, i + 1));
+      if (p && p.inZone && p.rr != null && p.rr >= 1.5 && p.t1 != null) pos = { i, price: c, stop: p.stop, target: p.t1 };
+      continue;
+    }
+    if (c >= pos.target || c <= pos.stop || i - pos.i >= MAX_DAYS) {
+      planTrades.push({ in: pos.i, out: i, buy: pos.price, sell: c, pct: pct(pos.price, c) }); pos = null;
+    }
+  }
+  const planOpen = pos ? { buy: pos.price, nowPct: pct(pos.price, closes.at(-1)), days: closes.length - 1 - pos.i } : null;
+  return { days: closes.length, rsi: summary(rsiTrades, rsiOpen), plan: summary(planTrades, planOpen), buyHoldPct: pct(closes[0], closes.at(-1)) };
+}
+
 /** Buying n more shares at price: new average cost (= new break-even, before fees) and the extra money needed. */
 export function averageDown(qty, avg, n, price) {
   const total = qty + n;
@@ -143,8 +190,94 @@ export function ruleHit(rule, row) {
 }
 export const ruleText = (r) => `${RULE_TYPES[r.type]} ${r.value}`;
 
-/** Runs a thndr CLI command and returns its JSON; failures throw Error(Thndr's message), with .code like NOT_AUTHENTICATED. */
+// In-process thndr-mcp: load its use cases once (same code the CLI runs) so the instrument lookup cache and the
+// session stay warm between calls. Each CLI process used to re-resolve every ticker (1 request per stock per call),
+// which hit Thndr's rate limit with the 5-s live refresh. Falls back to spawning the CLI if loading fails.
+const POSITIONAL = { get_price_snapshot: 'symbols', login_start: 'email', login_verify_code: 'code', login_import_session: 'cookieHeader', search_instruments: 'query', get_index_constituents: 'index', get_tag_instruments: 'tag' };
+const STRINGS = new Set(['symbol', 'code', 'email', 'cookieHeader', 'query', 'cursor', 'before', 'from', 'to', 'status', 'locale', 'market', 'resolution']);
+let inproc = null, inprocLibUrl = null;
+function loadInProcess() {
+  inproc ??= (async () => {
+    const bin = process.env.THNDR_BIN || '';
+    if (!bin.endsWith('.js')) throw new Error('no bundled CLI');
+    const { readFileSync } = await import('node:fs');
+    const { dirname, join } = await import('node:path');
+    const { pathToFileURL } = await import('node:url');
+    const chunk = readFileSync(bin, 'utf8').match(/from "\.\/(chunk-[A-Za-z0-9_-]+\.js)"/)?.[1];
+    if (!chunk) throw new Error('chunk not found');
+    inprocLibUrl = pathToFileURL(join(dirname(bin), chunk)).href;
+    const lib = await import(inprocLibUrl);
+    const app = lib.compose(lib.loadConfig());
+    return { app, run: lib.runAndPresent };
+  })();
+  return inproc;
+}
+/**
+ * Firebase ID token for Thndr's realtime price feed, from the Firebase login thndr-mcp keeps in its session file.
+ * Uses the cached token while valid, else Google's standard securetoken refresh. Read-only (never writes the session
+ * file) and never logged.
+ */
+let fbToken = null;
+export async function firebaseIdToken() {
+  if (fbToken && fbToken.exp - Date.now() > 120_000) return fbToken.value;
+  const { app } = await loadInProcess(); // ensures thndr-mcp is loaded; its config knows the session file path
+  const { readFileSync } = await import('node:fs');
+  const sessionPath = (await import(inprocLibUrl)).loadConfig().sessionFile;
+  const fb = JSON.parse(readFileSync(sessionPath, 'utf8')).firebase ?? {};
+  const key = Object.keys(fb).find((k) => k.startsWith('firebase:authUser:'));
+  if (!key) throw Object.assign(new Error('Not logged in to Thndr'), { code: 'NOT_AUTHENTICATED' });
+  const apiKey = key.split(':')[2], sts = fb[key].stsTokenManager ?? {};
+  if (sts.accessToken && sts.expirationTime - Date.now() > 120_000) {
+    fbToken = { value: sts.accessToken, exp: sts.expirationTime };
+    return fbToken.value;
+  }
+  const res = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: sts.refreshToken ?? '' }),
+  });
+  if (!res.ok) throw Object.assign(new Error(`Firebase token refresh failed (${res.status})`), { code: 'SESSION_EXPIRED' });
+  const j = await res.json();
+  fbToken = { value: j.id_token, exp: Date.now() + Number(j.expires_in ?? 3600) * 1000 };
+  void app;
+  return fbToken.value;
+}
+
+/** CLI-style args (['get-price-history', 'COMI', '--bars=120']) -> [use case name, input object]. */
+export function toInput(args) {
+  const [cmd, ...rest] = args, name = cmd.replace(/-/g, '_'), input = {}, pos = [];
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (!a.startsWith('--')) { pos.push(a); continue; }
+    let [k, v] = a.slice(2).split(/=(.*)/s);
+    if (v === undefined) v = rest[++i];
+    k = k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    input[k] = !STRINGS.has(k) && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
+  }
+  if (pos.length) {
+    const key = POSITIONAL[name] ?? 'symbol';
+    input[key] = key === 'symbols' ? pos : pos[0];
+  }
+  return [name, input];
+}
+
+/** Runs a thndr command and returns its JSON; failures throw Error(Thndr's message), with .code like NOT_AUTHENTICATED. */
 export async function thndr(args) {
+  try {
+    const { app, run } = await loadInProcess();
+    const [name, input] = toInput(args);
+    const useCase = app.useCases.find((u) => u.name === name);
+    if (!useCase) throw Object.assign(new Error(`Unknown thndr command ${args[0]}`), { code: 'UNKNOWN' });
+    const out = await run(useCase, input, app.logger);
+    if (out.ok) return JSON.parse(JSON.stringify(out.view)); // same JSON shape as the CLI's --json
+    throw Object.assign(new Error(out.error.message), { code: out.error.error, thndr: true });
+  } catch (e) {
+    if (e.thndr || e.code === 'UNKNOWN') throw e;
+    if (!String(e.message).match(/no bundled CLI|chunk not found|Cannot find module|ERR_MODULE/)) throw e;
+  }
+  return thndrSpawn(args);
+}
+
+async function thndrSpawn(args) {
   try {
     // A .js CLI path is run with this same Node binary (no system `node` needed, works for the packaged app too).
     const bin = process.env.THNDR_BIN || 'thndr', js = bin.endsWith('.js');
@@ -217,6 +350,19 @@ function selfTest() {
   const rally = analyze('X', [...chop, 106, 108, 109, 109.5]);
   assert(advise({ ...rally, now: { side: 'SELL' }, rsi: 75 }, held(100)).action === 'TAKE_PROFIT', 'advise take profit');
   assert(advise(rc, null) === null, 'advise needs a position');
+  // backtest: a gentle wave (±4%, period 40) -> RSI buys near troughs mostly win.
+  // (With ±15% swings the same rule loses: RSI < 30 fires early in the fall and the -10% stop hits — the "falling knife".)
+  const wave = Array.from({ length: 400 }, (_, i) => 100 + 4 * Math.sin((i * 2 * Math.PI) / 40) + i * 0.01);
+  const knife = backtest(Array.from({ length: 400 }, (_, i) => 100 + 15 * Math.sin((i * 2 * Math.PI) / 40)));
+  assert(knife.rsi.winRate < 0.5, 'big swings: RSI rule should mostly lose');
+  const bt = backtest(wave);
+  assert(bt.rsi.trades >= 3 && bt.rsi.winRate > 0.5 && bt.rsi.avgPct > 0, `rsi backtest ${JSON.stringify({ ...bt.rsi, list: 0 })}`);
+  assert(bt.plan.trades >= 1, `plan backtest ${JSON.stringify({ ...bt.plan, list: 0 })}`);
+  assert(Math.abs(bt.buyHoldPct - ((wave.at(-1) - wave[0]) / wave[0]) * 100) < 1e-9, 'buy & hold');
+  assert(JSON.stringify(toInput(['get-price-history', 'COMI', '--resolution', '1d', '--bars', '120'])) === '["get_price_history",{"resolution":"1d","bars":120,"symbol":"COMI"}]', 'toInput history');
+  assert(JSON.stringify(toInput(['get-price-snapshot', 'COMI', 'HRHO'])) === '["get_price_snapshot",{"symbols":["COMI","HRHO"]}]', 'toInput snapshot');
+  assert(JSON.stringify(toInput(['login-verify-code', '--code=012345'])) === '["login_verify_code",{"code":"012345"}]', 'code stays a string');
+  assert(toInput(['get-news', '--symbol=COMI', '--content-chars=0'])[1].contentChars === 0, 'kebab flags -> camelCase numbers');
   console.log('self-test ok');
 }
 

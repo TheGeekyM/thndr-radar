@@ -10,3 +10,5 @@ node_modules/
 dist/
 build/
 logos.json
+networth.json
+news-seen.json

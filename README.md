@@ -1,6 +1,6 @@
 # ⚡ Thndr Radar
 
-**A desktop radar for your EGX stocks:** live prices, RSI signals, ready-made trade plans (buy zone, stop-loss, targets), order book, trades, and desktop alerts. Your portfolio comes straight from your Thndr account, and there are plain-Arabic explanations (اشرح) for beginners.
+**A desktop radar for your EGX stocks:** realtime prices (Thndr's own live feed), RSI signals, ready-made trade plans (buy zone, stop-loss, targets), order book, trades, and desktop alerts. Your portfolio comes straight from your Thndr account, and there are plain-Arabic explanations (اشرح) for beginners.
 
 > ⚠️ **Unofficial.** Not affiliated with or endorsed by Thndr. It uses the community [thndr-mcp](https://github.com/armaaar/thndr-mcp) CLI, which talks to Thndr's private web API and may break at any time. Using an unofficial client may breach your broker's terms.
 > **Not financial advice.** Every signal and level comes from simple, transparent rules over recent prices. Nothing here is a prediction. Check everything in the official app before acting.
@@ -47,6 +47,13 @@
   - Key stats: open/high/low, volume, P/E, dividend yield, 52-week range.
   - Order book with buyer/seller pressure, plus the latest trades.
   - Your buy history and a hold / average down / take profit / reduce suggestion.
+- **Realtime prices** from Thndr's live feed (the one ThndrX uses), pushed into the window. Everything else refreshes every 30 s.
+- **Backtest** for every stock: how the RSI and trade-plan rules did over ~2 years, compared with just holding. It tells you when not to trust the signals.
+- **Dividends** (cash and bonus shares, with your expected amount) and **news** (English or Arabic) in the stock sidebar.
+- **More alerts:** volume spikes (≥ 2× normal), news on stocks you own, a daily summary after the close, and a warning when your Thndr login expires.
+- **Sort and filter** the watchlist (my stocks, BUY/SELL, volume spikes; by P&L, RSI, change…).
+- **Net-worth history**, recorded once a day and charted in the card.
+- **Phone access (optional):** open the app on your phone over the same Wi-Fi with a secret QR link. It's off by default, can only be turned on from the computer, and making a new link locks out old ones.
 - **Dark / light mode** toggle in the top bar.
 - **اشرح buttons** explain every section in simple Egyptian Arabic, using the stock's real numbers.
 

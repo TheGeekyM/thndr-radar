@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EGX Alerts</title>
+<title>Thndr Radar</title>
 <style>
   :root {
     --bg: #f6f7f9; --panel: #fff; --text: #1b1f24; --muted: #69707a; --line: #e3e6ea;
@@ -107,6 +107,25 @@
   .tape th { font-size: 11px; }
   .tape tr:nth-child(even) td { background: var(--bg); }
   /* Your average buy price under the price (held stocks); click = "My buys" tab in the sidebar */
+  .banner { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: var(--sell-bg); color: var(--sell); font-weight: 600; border-bottom: 1px solid var(--line); }
+  .banner .msg { flex: 1; }
+  .banner[hidden] { display: none; }
+  .pill.INFO { color: var(--accent); background: var(--zone); }
+  .vol { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 99px; color: #b45309; background: #fef3c7; }
+  :root[data-theme="dark"] .vol { color: #fbbf24; background: #3a2a0a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .vol { color: #fbbf24; background: #3a2a0a; } }
+  .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .toolbar form { margin: 0; }
+  .toolbar .spacer { flex: 1; }
+  .nwchart { margin-top: 10px; }
+  .nwchart svg { display: block; width: 100%; height: 46px; overflow: visible; }
+  .bt-row { display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .bt-row.h { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; padding-top: 0; }
+  .bt-row:last-of-type { border-bottom: 0; }
+  .div-row, .news-row { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .div-row:last-child, .news-row:last-child { border-bottom: 0; }
+  .news-row a { color: var(--text); text-decoration: none; font-weight: 600; }
+  .news-row a:hover { color: var(--accent); }
   /* Net-worth card (Thndr-style) */
   .pf { display: grid; grid-template-columns: minmax(260px, 1.2fr) 2fr; gap: 24px; align-items: center; }
   .pf .lbl { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
@@ -212,18 +231,28 @@
 </head>
 <body>
 <header>
-  <h1><span data-icon="activity"></span>EGX Alerts</h1>
+  <h1><span data-icon="activity"></span>Thndr Radar</h1>
   <span id="market" class="pill"></span>
   <span id="updated" class="muted"></span>
+  <button id="phone" class="x" style="border:1px solid var(--line);padding:7px" title="Open on your phone"><span data-icon="phone"></span></button>
   <button id="theme" class="x" style="border:1px solid var(--line);padding:7px" title="Dark / light mode"></button>
   <button id="login">Log in to Thndr</button>
   <button id="refresh" class="primary"><span data-icon="refresh"></span>Refresh</button>
 </header>
+<div class="banner" id="banner" hidden><span data-icon="alert"></span><span class="msg" id="banner-msg"></span><button class="primary" id="banner-login">Log in to Thndr</button></div>
 <main>
   <section id="pf"></section>
   <section>
     <h2>Watchlist</h2>
-    <form id="add" style="align-items:center"><input id="sym" placeholder="e.g. HRHO" maxlength="12" required><button id="addbtn"><span data-icon="plus"></span>Add</button><span id="add-err" class="err"></span></form>
+    <div class="toolbar">
+      <form id="add" style="align-items:center"><input id="sym" placeholder="e.g. HRHO" maxlength="12" required><button id="addbtn"><span data-icon="plus"></span>Add</button><span id="add-err" class="err"></span></form>
+      <span class="spacer"></span>
+      <div class="seg" id="filters"></div>
+      <select id="sortby" title="Sort the watchlist">
+        <option value="">Sort: default</option><option value="pnl">Sort: my P&amp;L %</option><option value="change">Sort: today's change</option>
+        <option value="rsi">Sort: RSI (low first)</option><option value="signal">Sort: signal (BUY first)</option><option value="vol">Sort: volume vs normal</option><option value="sym">Sort: A–Z</option>
+      </select>
+    </div>
     <table id="watch">
       <thead><tr><th>Symbol</th><th>Signal now</th><th>Price</th><th>Change</th><th>RSI (14)</th><th>RSI 30 days</th><th>50-day avg</th><th title="الاتجاه: هل السعر فوق ولا تحت متوسط سعره في آخر 50 يوم؟ فوق = بيطلع، تحت = بينزل">Trend</th><th>New alert today</th><th>Alerts</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
@@ -261,6 +290,9 @@
     <div class="chart" id="chart"></div>
   </div>
   <div class="sec"><div id="stats-head"></div><div class="stats" id="stats"></div></div>
+  <div class="sec" id="bt"></div>
+  <div class="sec" id="divs"></div>
+  <div class="sec" id="news"></div>
   <div class="sec">
     <div class="seg full" id="tabs"></div>
     <div id="pane"><p class="muted">Loading…</p></div>
@@ -285,6 +317,8 @@ const ICONS = {
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
   eye: '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
   eyeoff: '<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>',
+  phone: '<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
@@ -362,6 +396,7 @@ function renderPortfolio(s) {
       <div class="lbl">Net worth <button class="eye" id="eye" title="${hidden ? 'Show amounts' : 'Hide amounts'}">${icon(hidden ? 'eyeoff' : 'eye')}</button></div>
       <div class="nw money">${money(net)}<small>EGP</small></div>
       <div class="chips">${chip('Total return', ret, retPct)}${chip('Today', today, todayPct)}</div>
+      ${nwChart(s.netHistory)}
     </div>
     <div>
       <div class="grid">
@@ -384,6 +419,7 @@ try { if (localStorage.getItem('hideMoney')) document.body.classList.add('hide-m
 let last = null, sideSym = null;
 function render(s) {
   last = s;
+  renderBanner(s);
   renderPortfolio(s);
   if (view.startsWith('rules:') && $('dlg').open) renderRules();
   $('market').textContent = s.market ? 'Market open' : 'Market closed';
@@ -393,7 +429,8 @@ function render(s) {
   $('refresh').disabled = s.running;
   $('refresh').classList.toggle('spin', !!s.running);
 
-  const syms = [...new Set([...s.rows.map((r) => r.sym), ...Object.keys(s.errors)])];
+  let syms = [...new Set([...s.rows.map((r) => r.sym), ...Object.keys(s.errors)])];
+  syms = sortFilter(s, syms);
   $('rows').innerHTML = syms.map((sym) => {
     const r = s.rows.find((x) => x.sym === sym);
     const rm = s.held.includes(sym)
@@ -413,7 +450,7 @@ function render(s) {
       <td><div class="symcell">${logo(sym)}<b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></div></td>
       <td style="white-space:normal;min-width:190px"><span class="pill ${esc(r.now.side)}">${esc(r.now.side)}</span><div class="muted" style="font-size:12px">${esc(r.now.why)}</div></td>
       <td class="num pcell"><div class="p">${fmt(r.price)}</div>${pnlCell(s, r)}</td>
-      <td class="num ${r.change >= 0 ? 'up' : 'down'}">${r.change == null ? '—' : (r.change >= 0 ? '+' : '') + fmt(r.change) + '%'}</td>
+      <td class="num ${r.change >= 0 ? 'up' : 'down'}">${r.change == null ? '—' : (r.change >= 0 ? '+' : '') + fmt(r.change) + '%'}${r.volRatio >= 1.5 ? `<span class="vol" title="Volume today is ${fmt(r.volRatio, 1)}× the 30-day average: unusual interest">Vol ${fmt(r.volRatio, 1)}×</span>` : ''}</td>
       <td><div class="rsi"><b class="num ${zone}">${fmt(r.rsi, 1)}</b>${r.rsi == null ? '' : `<div class="bar"><i style="left:calc(${r.rsi}% - 1px)"></i></div>`}</div></td>
       <td>${spark(r.rsiTrail)}</td>
       <td class="num">${fmt(r.sma50)}</td>
@@ -426,7 +463,7 @@ function render(s) {
   $('log').innerHTML = s.log.map((e) => `<tr>
       <td class="muted">${esc(new Date(e.time).toLocaleString())}</td>
       <td><b>${esc(e.sym)}</b></td>
-      <td><span class="pill ${e.side === 'BUY' ? 'BUY' : 'SELL'}">${esc(e.side)}</span></td>
+      <td><span class="pill ${e.side === 'BUY' ? 'BUY' : e.side === 'INFO' ? 'INFO' : 'SELL'}">${e.side === 'INFO' ? 'Info' : esc(e.side)}</span></td>
       <td class="num">${fmt(e.price)}</td>
       <td style="white-space:normal">${esc(e.why)}</td></tr>`).join('')
     || '<tr><td colspan="5" class="muted">No alerts yet. They appear here and as desktop notifications.</td></tr>';
@@ -501,7 +538,7 @@ function renderRules() {
       <input id="rval" type="number" step="any" min="0" placeholder="${fmt(row.price)}" required style="width:90px;flex:none">
       <button class="primary">${icon('plus')}Add</button>
     </form>
-    <p class="muted" style="font-size:12px">You get a desktop notification when an alert is reached (once a day per alert), checked every 5 s while this window is open, every 15 min otherwise.</p>`;
+    <p class="muted" style="font-size:12px">You get a desktop notification when an alert is reached (once a day per alert), checked live while the market is open (Thndr's realtime feed), every 15 min otherwise.</p>`;
   const save = (data) => api('/api/rules', { sym, ...data }).catch((e) => msg(e.message));
   $('dlg-body').querySelectorAll('[data-sugg]').forEach((b) => { b.onclick = () => save({ add: sugg[b.dataset.sugg] }); });
   $('dlg-body').querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => save({ remove: b.dataset.del }); });
@@ -610,6 +647,7 @@ function openSide(sym, view = 'market') {
   $('side-sym').innerHTML = `<span class="symcell">${logo(sym)}${esc(sym)}</span>`;
   renderSideTabs(); renderSideHead(); renderControls();
   loadBook(); loadChart();
+  if (extras.sym !== sym) loadExtras(sym);
 }
 function closeSide() {
   sideSym = null; document.body.classList.remove('side-open');
@@ -669,7 +707,7 @@ $('side').addEventListener('click', (e) => {
   const k = e.target.closest('[data-help]')?.dataset.help;
   if (!k) return;
   helpOpen.has(k) ? helpOpen.delete(k) : helpOpen.add(k);
-  renderControls(); renderPlan(); renderStats(); renderPane(); renderPos();
+  renderControls(); renderPlan(); renderStats(); renderPane(); renderPos(); renderExtras();
 });
 
 function renderControls() {
@@ -884,7 +922,7 @@ function renderPane() {
     <div class="muted" style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px"><span>${qty(bidQ)} shares</span><span>${qty(askQ)} shares</span></div>
     <table class="book"><thead><tr><th>Orders</th><th>Bid qty</th><th>Bid</th><th>Ask</th><th style="text-align:right">Ask qty</th><th style="text-align:right">Orders</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6" class="muted">No orders</td></tr>'}</tbody></table>
-    <p class="muted" style="font-size:12px;margin:10px 0 0">Updated ${cairoTime(book.at)} Cairo · every 5 s while the market is open</p>`;
+    <p class="muted" style="font-size:12px;margin:10px 0 0">Updated ${cairoTime(book.at)} Cairo · refreshes every 30 s while the market is open</p>`;
 }
 
 // ---- "My buys" sidebar tab (held stocks): your average, every buy, P/L, and a rule-based suggestion ----
@@ -921,7 +959,21 @@ async function loadFills() {
  *  5. at a loss, price in the support (buy) zone or RSI < 30                                                    -> average down now
  *  6. at a loss, support exists below the price                                                                 -> average down at the support zone
  */
+// The server's advise() (alerts.mjs, unit-tested) is the single source; this maps it to the tab's labels.
+// adviseLocal (below) is only a fallback when the server has no advice for the stock yet.
+const SERVER_ACT = {
+  SELL: { act: 'SELL', key: 'cut', title: 'Reduce / exit (stop-loss broken)' },
+  TAKE_PROFIT: { act: 'SELL', key: 'take', title: 'Sell part (take profit)' },
+  AVERAGE_DOWN: { act: 'AVG', key: 'avgnow', title: 'Average down now' },
+  WAIT: { act: 'WAIT', key: 'wait', title: "Wait, don't average down yet" },
+  HOLD: { act: 'HOLD', key: 'hold', title: 'Hold' },
+};
 function advise(r, avg, price) {
+  const a = last?.advice?.[r?.sym];
+  if (a && SERVER_ACT[a.action]) return { ...SERVER_ACT[a.action], why: a.why };
+  return adviseLocal(r, avg, price);
+}
+function adviseLocal(r, avg, price) {
   const pl = r?.plan, pct = ((price - avg) / avg) * 100, rsi = r?.rsi ?? 50, sma = r?.sma50;
   const up = sma != null && price > sma, down = sma != null && price < sma;
   if (!pl) return { act: 'HOLD', key: 'hold', title: 'Hold', why: `${sPct(pct)} on your average; not enough price history for buy/sell levels.` };
@@ -1015,14 +1067,170 @@ function renderPos() {
     </div>`;
 }
 
+// ---- Watchlist filter + sort (remembered per browser) ----
+let filterBy = 'all', sortBy = '';
+try { filterBy = localStorage.getItem('filterBy') || 'all'; sortBy = localStorage.getItem('sortBy') || ''; } catch {}
+const FILTERS = [['all', 'All'], ['mine', 'My stocks'], ['BUY', 'BUY'], ['SELL', 'SELL'], ['vol', 'Volume spikes']];
+function renderFilters() {
+  $('filters').innerHTML = FILTERS.map(([k, l]) => `<button data-f="${k}" class="${k === filterBy ? 'on' : ''}">${l}</button>`).join('');
+  $('sortby').value = sortBy;
+}
+$('filters').onclick = (e) => { const f = e.target.closest('[data-f]')?.dataset.f; if (f) { filterBy = f; try { localStorage.setItem('filterBy', f); } catch {} renderFilters(); if (last) render(last); } };
+$('sortby').onchange = () => { sortBy = $('sortby').value; try { localStorage.setItem('sortBy', sortBy); } catch {} if (last) render(last); };
+renderFilters();
+function sortFilter(s, syms) {
+  const row = (x) => s.rows.find((r) => r.sym === x);
+  const held = (x) => !!posOf(s, x);
+  const pnlPct = (x) => { const p = posOf(s, x), r = row(x); return p && r && p.avg ? (r.price - p.avg) / p.avg : -Infinity; };
+  let out = syms.filter((x) => {
+    const r = row(x);
+    if (filterBy === 'mine') return held(x);
+    if (filterBy === 'BUY' || filterBy === 'SELL') return r?.now?.side === filterBy || r?.signals?.some((g) => g.side === filterBy);
+    if (filterBy === 'vol') return (r?.volRatio ?? 0) >= 1.5;
+    return true;
+  });
+  const key = {
+    pnl: (x) => -pnlPct(x), change: (x) => -(row(x)?.change ?? -Infinity), rsi: (x) => row(x)?.rsi ?? Infinity,
+    signal: (x) => ({ BUY: 0, HOLD: 1, SELL: 2 })[row(x)?.now?.side] ?? 3, vol: (x) => -(row(x)?.volRatio ?? 0), sym: (x) => x,
+  }[sortBy];
+  if (key) out = [...out].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+  return out;
+}
+
+// ---- Net worth over time (one point per day, recorded by the app since you started it) ----
+function nwChart(h) {
+  if (!h || h.length < 2) return `<div class="muted" style="font-size:11px;margin-top:10px">Net-worth history: recording since ${esc(h?.[0]?.d ?? 'today')}; the chart appears after the second day.</div>`;
+  const W = 300, H = 46, vs = h.map((p) => p.v), lo = Math.min(...vs), hi = Math.max(...vs), span = hi - lo || 1;
+  const x = (i) => (i / (h.length - 1)) * W, y = (v) => H - 4 - ((v - lo) / span) * (H - 8);
+  const d = h.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
+  const up = vs.at(-1) >= vs[0], col = up ? 'var(--buy)' : 'var(--sell)', ch = ((vs.at(-1) - vs[0]) / vs[0]) * 100;
+  return `<div class="nwchart" title="Net worth since ${esc(h[0].d)}: ${ch >= 0 ? '+' : ''}${fmt(ch)}%"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}L${W},${H}L0,${H}Z" fill="${col}" opacity=".12"/><path d="${d}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>
+    <div class="muted" style="font-size:11px;display:flex;justify-content:space-between"><span>${esc(h[0].d)}</span><span class="money">${ch >= 0 ? '+' : ''}${fmt(ch)}% since then</span><span>${esc(h.at(-1).d)}</span></div></div>`;
+}
+
+// ---- Login expired banner ----
+function renderBanner(s) {
+  $('banner').hidden = !s.authError;
+  if (s.authError) $('banner-msg').textContent = s.authError;
+}
+$('banner-login').onclick = () => openLogin();
+
+// ---- Sidebar extras: backtest, dividends, news (loaded once per stock) ----
+let extras = { sym: null }, newsLocale = 'en';
+try { newsLocale = localStorage.getItem('newsLocale') || 'en'; } catch {}
+function loadExtras(sym) {
+  extras = { sym };
+  for (const id of ['bt', 'divs', 'news']) $(id).innerHTML = '<p class="muted" style="margin:0">Loading…</p>';
+  const get = (k, url) => getJson(url).then((j) => { if (extras.sym === sym) { extras[k] = j; renderExtras(); } })
+    .catch((e) => { if (extras.sym === sym) { extras[k] = { error: e.message }; renderExtras(); } });
+  get('bt', `/api/backtest?sym=${encodeURIComponent(sym)}`);
+  get('divs', `/api/dividends?sym=${encodeURIComponent(sym)}`);
+  get('news', `/api/news?sym=${encodeURIComponent(sym)}&locale=${newsLocale}`);
+}
+function renderExtras() {
+  const sym = extras.sym; if (!sym || sym !== sideSym) return;
+  const pct = (v) => (v == null ? '—' : `<span class="${v >= 0 ? 'up' : 'down'}">${v >= 0 ? '+' : ''}${fmt(v, 1)}%</span>`);
+  // Backtest
+  const b = extras.bt;
+  if (!b) $('bt').innerHTML = '<p class="muted" style="margin:0">Loading…</p>';
+  else if (b.error) $('bt').innerHTML = `<h2><span>Backtest</span></h2><p class="err">${esc(b.error)}</p>`;
+  else {
+    const line = (name, x) => `<div class="bt-row"><div><b>${name}</b></div><div>${x.trades}</div><div>${x.winRate == null ? '—' : fmt(x.winRate * 100, 0) + '%'}</div><div>${pct(x.avgPct)}</div><div>${pct(x.totalPct)}</div></div>`;
+    const best = Math.max(b.rsi.totalPct ?? -Infinity, b.plan.totalPct ?? -Infinity);
+    const verdict = !b.rsi.trades && !b.plan.trades ? 'The rules never triggered in this period.'
+      : best >= b.buyHoldPct ? `The app's rules <b>beat</b> simply holding ${esc(sym)} in this period.`
+      : `Simply holding ${esc(sym)} (${pct(b.buyHoldPct)}) <b>beat</b> both rules in this period, so treat BUY/SELL signals on this stock with caution.`;
+    const open = [b.rsi.open && `RSI rule is in a trade now: bought at ${fmt(b.rsi.open.buy)}, ${pct(b.rsi.open.nowPct)}`, b.plan.open && `Plan rule is in a trade now: bought at ${fmt(b.plan.open.buy)}, ${pct(b.plan.open.nowPct)}`].filter(Boolean);
+    $('bt').innerHTML = `<h2><span>Backtest · ${new Date(b.from).getFullYear()}–${new Date(b.to).getFullYear()}</span>${helpBtn('bt')}</h2>${helpBox('bt', b, sym)}
+      <div class="bt-row h"><div>Rule</div><div>Trades</div><div>Won</div><div>Avg</div><div>Total</div></div>
+      ${line('RSI (buy &lt;30, sell &gt;70)', b.rsi)}${line('Trade plan (zone → T1)', b.plan)}
+      <div class="bt-row"><div><b>Just hold</b></div><div>1</div><div>—</div><div>—</div><div>${pct(b.buyHoldPct)}</div></div>
+      <p style="margin:10px 0 0;font-size:13px">${verdict}</p>
+      ${open.length ? `<p class="muted" style="margin:6px 0 0;font-size:12px">${open.join(' · ')}</p>` : ''}
+      <p class="muted" style="margin:6px 0 0;font-size:11px">Buys and sells at the daily close, no fees. Past results don't predict the future.</p>`;
+  }
+  // Dividends
+  const d = extras.divs, p = last ? posOf(last, sym) : null;
+  if (!d) $('divs').innerHTML = '<p class="muted" style="margin:0">Loading…</p>';
+  else if (d.error) $('divs').innerHTML = `<h2><span>Dividends</span></h2><p class="err">${esc(d.error)}</p>`;
+  else {
+    const rows = d.dividends.slice(0, 5).map((x) => {
+      const upcoming = x.status !== 'PAST', when = x.distributions?.[0]?.date ?? x.recordDate;
+      const what = x.type === 'CASH' ? `<b>${fmt(x.cashPerShare)} EGP</b> per share` : x.bonusSharesPerShare != null ? `<b>${fmt(x.bonusSharesPerShare * 100, 0)}%</b> bonus shares` : esc(x.type);
+      const mine = p && x.type === 'CASH' && x.cashPerShare ? ` · <span class="money">you'd get ≈ ${money(x.cashPerShare * p.qty)} EGP</span>` : '';
+      return `<div class="div-row">${upcoming ? '<span class="pill BUY">Upcoming</span> ' : ''}${what}${mine}<div class="muted" style="font-size:12px">Record date ${esc(x.recordDate ?? '—')}${when && when !== x.recordDate ? ` · paid ${esc(when)}` : ''}</div></div>`;
+    }).join('');
+    $('divs').innerHTML = `<h2><span>Dividends</span>${helpBtn('divs')}</h2>${helpBox('divs')}${rows || '<p class="muted" style="margin:0">No dividends on record.</p>'}`;
+  }
+  // News
+  const nw = extras.news;
+  const tabs = `<span class="seg"><button data-nl="en" class="${newsLocale === 'en' ? 'on' : ''}">EN</button><button data-nl="ar" class="${newsLocale === 'ar' ? 'on' : ''}">عربي</button></span>`;
+  if (!nw) $('news').innerHTML = `<h2><span>News</span>${tabs}</h2><p class="muted" style="margin:0">Loading…</p>`;
+  else if (nw.error) $('news').innerHTML = `<h2><span>News</span>${tabs}</h2><p class="err">${esc(nw.error)}</p>`;
+  else {
+    const ar = nw.locale === 'ar';
+    const rows = nw.items.map((it) => `<div class="news-row" ${ar ? 'dir="rtl" style="text-align:right"' : ''}>
+        ${it.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer">${esc(it.title)}</a>` : `<b>${esc(it.title)}</b>`}
+        ${it.content ? `<div class="muted" style="font-size:12px;margin-top:2px">${esc(it.content)}</div>` : ''}
+        <div class="muted" style="font-size:11px;margin-top:2px"><bdi>${esc(new Date(it.publishedAt).toLocaleString('en-GB', { timeZone: 'Africa/Cairo', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</bdi> · ${esc(it.source ?? '')}</div></div>`).join('');
+    $('news').innerHTML = `<h2><span>News</span>${tabs}</h2>${rows || '<p class="muted" style="margin:0">No news.</p>'}`;
+  }
+}
+$('news').addEventListener('click', (e) => {
+  const l = e.target.closest('[data-nl]')?.dataset.nl;
+  if (!l || l === newsLocale || !extras.sym) return;
+  newsLocale = l; try { localStorage.setItem('newsLocale', l); } catch {}
+  const sym = extras.sym; extras.news = null; renderExtras();
+  getJson(`/api/news?sym=${encodeURIComponent(sym)}&locale=${l}`).then((j) => { if (extras.sym === sym) { extras.news = j; renderExtras(); } }).catch((er) => { if (extras.sym === sym) { extras.news = { error: er.message }; renderExtras(); } });
+});
+HELP.bt = (b, sym) => `
+  <p><b>الاختبار ده بيعمل إيه؟</b> بيجرب قواعد البرنامج على أسعار ${esc(sym)} في آخر سنتين تقريباً، كأنك كنت ماشي عليها: بيشتري ويبيع على سعر الإغلاق، من غير عمولات.</p>
+  <p><b>قاعدة RSI:</b> اشتري لما RSI ينزل تحت 30، وبيع لما يطلع فوق 70 (أو لو خسرت 10%، أو بعد 60 يوم). <b>قاعدة الخطة:</b> اشتري في منطقة الشراء، وبيع عند الهدف الأول أو وقف الخسارة.</p>
+  <p><b>Trades:</b> عدد الصفقات. <b>Won:</b> نسبة الصفقات الكسبانة. <b>Avg:</b> متوسط مكسب/خسارة الصفقة. <b>Total:</b> النتيجة الكلية لو كنت عملت كل الصفقات ورا بعض.</p>
+  <p><b>Just hold:</b> لو كنت اشتريت من أول الفترة وسبته: <bdi>${b.buyHoldPct >= 0 ? '+' : ''}${fmt(b.buyHoldPct, 1)}%</bdi>. لو الرقم ده أحسن من القواعد، يبقى إشارات الشراء والبيع على السهم ده مش موثوقة أوي، فخد بالك.</p>
+  <p class="note">نتايج الماضي مش ضمان للمستقبل.</p>`;
+HELP.divs = () => `
+  <p><b>التوزيعات:</b> فلوس (<bdi>Cash</bdi>) أو أسهم مجانية (<bdi>Bonus</bdi>) الشركة بتديها للمساهمين من أرباحها.</p>
+  <p><b>تاريخ الاستحقاق (<bdi>Record date</bdi>):</b> لازم تكون شايل السهم في التاريخ ده عشان تاخد التوزيع (وفي مصر غالباً لازم تشتري قبله بيومين تداول بسبب التسوية). <b><bdi>Paid</bdi>:</b> يوم ما الفلوس بتنزل.</p>
+  <p><b><bdi>you'd get</bdi>:</b> تقدير للي هتاخده = التوزيع للسهم × عدد أسهمك (قبل الضرايب).</p>`;
+
+// ---- Phone access (same Wi-Fi). Turned on only from this computer; the link carries a secret token. ----
+$('phone').onclick = async () => {
+  $('dlg-title').textContent = 'Open on your phone';
+  view = 'phone'; msg();
+  $('dlg-body').innerHTML = '<p class="muted">Loading…</p>';
+  if (!$('dlg').open) $('dlg').showModal();
+  const paint = (r) => {
+    $('dlg-body').innerHTML = r.enabled ? `
+      <p>Scan this with your phone camera. Your phone must be on the <b>same Wi-Fi</b> as this computer.</p>
+      ${r.qrSvg ? `<div class="qr">${r.qrSvg}</div><p class="center" style="font-size:12px;word-break:break-all"><a href="${esc(r.url)}" style="color:var(--accent)">${esc(r.url)}</a></p>` : '<p class="err">No Wi-Fi/LAN address found on this computer.</p>'}
+      <p class="muted" style="font-size:12px">Anyone with this link on your network can see your portfolio. Make a new link to lock out old ones.</p>
+      <p><button id="ph-new">New link</button> <button id="ph-off">Turn off</button></p>`
+      : `<p>See Thndr Radar in your phone's browser while it's on the same Wi-Fi as this computer, protected by a secret link (QR code).</p>
+      <p class="muted" style="font-size:12px">Off by default. When on, the app also listens on your local network.</p>
+      <p><button class="primary" id="ph-on">Turn on phone access</button></p>`;
+    const set = (data) => fetch('/api/remote', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) })
+      .then((x) => x.json()).then((j) => { if (j.error) throw new Error(j.error); paint(j); }).catch((e) => msg(e.message));
+    const b = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+    b('ph-on', () => set({ enabled: true })); b('ph-off', () => set({ enabled: false })); b('ph-new', () => set({ enabled: true, rotate: true }));
+  };
+  try { const r = await fetch('/api/remote'); const j = await r.json(); if (!r.ok) throw new Error(j.error); paint(j); }
+  catch (e) { $('dlg-body').innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+};
+
 load();
-// Every 5 s: live prices (server only fetches while the market is open). Skip a tick if the last one is still busy.
+// Prices arrive live from Thndr's realtime feed: the server pushes a tick and the page reloads its state.
+// Fallback: refresh every 30 s (also the order book / chart in the sidebar).
+try {
+  let t = null;
+  new EventSource('/api/events').onmessage = () => { clearTimeout(t); t = setTimeout(() => load().then(() => { if (sideSym) renderSideHead(); }), 200); };
+} catch {}
 let ticking = false;
 setInterval(async () => {
   if (ticking) return; ticking = true;
   try { await api('/api/live'); } catch {} finally { ticking = false; }
   if (sideSym) { renderSideHead(); if (last?.market) { loadBook(); if (sideRange === '1D') loadChart(); } }
-}, 5000);
+}, 30000);
 </script>
 </body>
 </html>

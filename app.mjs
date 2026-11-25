@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-// EGX Alerts desktop app: local server (127.0.0.1 only) + Chrome app window (see start.sh).
+// Thndr Radar desktop app: local server (127.0.0.1; optional token-protected phone access) + app window.
 // Checks every 15 min during EGX hours, pops a desktop notification (and Telegram if configured) on new signals.
 import http from 'node:http';
 import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { networkInterfaces } from 'node:os';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { advise, analyze, history, RULE_TYPES, ruleHit, ruleText, telegram, thndr } from './alerts.mjs';
+import { advise, analyze, backtest, firebaseIdToken, history, RULE_TYPES, ruleHit, ruleText, telegram, thndr } from './alerts.mjs';
 
 // ponytail: reuse the QR library thndr-mcp already ships instead of adding our own dependency.
 // Defaults so a packaged app needs no env vars: bundled thndr CLI, and on Windows data in %APPDATA%\ThndrRadar.
@@ -36,6 +38,7 @@ function cairo(now = new Date()) {
   }).formatToParts(now).map((x) => [x.type, x.value]));
   const mins = +p.hour * 60 + +p.minute;
   return {
+    mins, tradingDay: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu'].includes(p.weekday),
     day: now.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' }),
     // EGX: Sun–Thu 10:00–14:30; keep checking until 15:00 to catch the closing price.
     open: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu'].includes(p.weekday) && mins >= 600 && mins <= 900,
@@ -66,7 +69,7 @@ function fire(key, sym, side, price, why) {
   log.unshift({ key, time: new Date().toISOString(), sym, side, price, why });
   log = log.slice(0, 500);
   saveJson('alerts-log.json', log);
-  notify(`${side === 'BUY' ? '🟢' : '🔴'} ${side} ${sym} @ ${price}`, why);
+  notify(side === 'INFO' ? `🔵 ${sym}${price != null ? ` @ ${price}` : ''}` : `${side === 'BUY' ? '🟢' : '🔴'} ${side} ${sym} @ ${price}`, why);
 }
 
 function checkRules(row) {
@@ -91,17 +94,173 @@ async function fetchLogos() {
   if (changed) saveJson('logos.json', logos);
 }
 
+const AUTH_CODES = ['NOT_AUTHENTICATED', 'SESSION_EXPIRED'];
+const assetIds = {}; // ticker -> Thndr asset id (for the realtime feed)
+
+// ---- Realtime prices: Thndr's own feed (Firebase Realtime Database, what ThndrX uses) streamed over HTTPS (SSE) ----
+// One stream per stock while the market is open; each new price updates the row, checks your alerts and pushes to the page.
+const RTDB = 'https://thndrx-realtime-db.europe-west1.firebasedatabase.app';
+const streams = new Map(); // sym -> AbortController
+async function streamPrice(sym, id, ctl) {
+  while (!ctl.signal.aborted) {
+    try {
+      const token = await firebaseIdToken();
+      const res = await fetch(`${RTDB}/assetPrice/${id}/price/last/value.json?auth=${encodeURIComponent(token)}`, { headers: { accept: 'text/event-stream' }, signal: ctl.signal });
+      if (!res.ok) throw new Error(`realtime ${res.status}`);
+      let buf = '', event = '';
+      for await (const chunk of res.body.pipeThrough(new TextDecoderStream())) {
+        buf += chunk;
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+          if (line.startsWith('event:')) event = line.slice(6).trim();
+          else if (line.startsWith('data:') && (event === 'put' || event === 'patch')) {
+            const d = JSON.parse(line.slice(5));
+            if (typeof d?.data === 'number') onPrice(sym, d.data);
+          } else if (event === 'auth_revoked' || event === 'cancel') { buf = ''; break; }
+        }
+        if (event === 'auth_revoked' || event === 'cancel') break; // token expired: reconnect with a fresh one
+      }
+    } catch (e) {
+      if (ctl.signal.aborted) return;
+      console.error(`realtime ${sym}:`, e.message);
+      await new Promise((r) => setTimeout(r, 30_000)); // back off; the 30-s polling keeps prices fresh meanwhile
+    }
+  }
+}
+function onPrice(sym, price) {
+  const c = cache[sym], i = state.rows.findIndex((r) => r.sym === sym);
+  if (!c || i < 0) return;
+  const { day } = cairo(), today = c.lastDay === day;
+  const closes = today ? [...c.closes.slice(0, -1), price] : [...c.closes, price];
+  const prevClose = today ? c.closes.at(-2) : c.closes.at(-1);
+  const old = state.rows[i];
+  state.rows[i] = { ...analyze(sym, closes), change: prevClose ? ((price - prevClose) / prevClose) * 100 : old.change, signals: old.signals, volRatio: old.volRatio };
+  checkRules(state.rows[i]);
+  state.liveAt = new Date().toISOString(); state.realtime = true;
+  pushToPages();
+}
+function syncStreams() {
+  const want = cairo().open && !state.authError ? new Set(config.symbols.filter((x) => assetIds[x])) : new Set();
+  for (const [sym, ctl] of streams) if (!want.has(sym)) { ctl.abort(); streams.delete(sym); }
+  for (const sym of want) if (!streams.has(sym)) { const ctl = new AbortController(); streams.set(sym, ctl); streamPrice(sym, assetIds[sym], ctl); }
+  state.realtime = streams.size > 0;
+}
+
+// Pages listen on /api/events (SSE) and reload state on each push; throttled to one push per second.
+const pages = new Set();
+let pushTimer = null;
+function pushToPages() {
+  pushTimer ??= setTimeout(() => { pushTimer = null; for (const res of pages) res.write('data: tick\n\n'); }, 1000);
+}
+setInterval(() => { for (const res of pages) res.write(': keep-alive\n\n'); }, 25_000);
+let authNotified = false;
+
+// Volume spike: today's traded shares ≥ 2× the 30-day average (one snapshot call for all stocks). Shown in the table too.
+async function volumeSpikes(day) {
+  const syms = config.symbols.filter((x) => state.rows.some((r) => r.sym === x)).slice(0, 50);
+  if (!syms.length) return;
+  const { quotes } = await thndr(['get-price-snapshot', ...syms]);
+  for (const q of quotes) {
+    if (q.instrumentId) assetIds[q.ticker] = q.instrumentId;
+    const row = state.rows.find((r) => r.sym === q.ticker);
+    if (!row || !q.volume || !q.averageVolume30d) continue;
+    row.volRatio = q.volume / q.averageVolume30d;
+    if (row.volRatio >= 2 && cairo().open) {
+      fire(`${day}:${q.ticker}:volume`, q.ticker, 'INFO', q.last ?? row.price, `Volume spike: ${Math.round(q.volume).toLocaleString('en-US')} shares today = ${row.volRatio.toFixed(1)}× the 30-day average. Something may be happening; check the news.`);
+    }
+  }
+}
+
+// News alerts for stocks you own: newest headline per stock; the first run only remembers what's there (no flood).
+const newsSeen = readJson('news-seen.json', {});
+async function newsAlerts() {
+  let changed = false;
+  for (const sym of state.held) {
+    try {
+      const { items } = await thndr(['get-news', `--symbol=${sym}`, '--limit=3', '--content-chars=0']);
+      const first = !(sym in newsSeen);
+      const seen = new Set(newsSeen[sym] ?? []);
+      for (const it of [...(items ?? [])].reverse()) {
+        if (seen.has(it.id)) continue;
+        seen.add(it.id); changed = true;
+        if (!first) fire(`news:${it.id}`, sym, 'INFO', null, `News: ${it.title}`);
+      }
+      newsSeen[sym] = [...seen].slice(-20);
+    } catch {}
+  }
+  if (changed) saveJson('news-seen.json', newsSeen);
+}
+
+// Net worth over time: one point per day (Thndr's total account value), kept in networth.json.
+const netHistory = readJson('networth.json', []);
+function recordNetWorth(day) {
+  const v = state.account?.totalAccountValue;
+  if (!(v > 0)) return;
+  const last = netHistory.at(-1);
+  if (last?.d === day) last.v = v; else netHistory.push({ d: day, v });
+  if (netHistory.length > 2000) netHistory.splice(0, netHistory.length - 2000);
+  saveJson('networth.json', netHistory);
+}
+
+// End-of-day summary for your portfolio, once per trading day after the close (14:35 Cairo).
+function dailySummary() {
+  const c = cairo();
+  if (!c.tradingDay || c.mins < 875 || config.lastSummary === c.day || !state.held.length) return;
+  let today = 0, value = 0;
+  const moves = [];
+  for (const sym of state.held) {
+    const r = state.rows.find((x) => x.sym === sym), p = state.positions[sym];
+    if (!r || !p || r.change == null) continue;
+    const prev = r.price / (1 + r.change / 100);
+    today += p.quantity * (r.price - prev); value += p.quantity * r.price;
+    moves.push({ sym, ch: r.change });
+  }
+  if (!moves.length) return;
+  moves.sort((a, b) => b.ch - a.ch);
+  const pct = value - today ? (today / (value - today)) * 100 : 0, sg = (n) => (n >= 0 ? '+' : '−');
+  const f = (n) => Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  notify(`${today >= 0 ? '📈' : '📉'} Today ${sg(today)}${f(today)} EGP (${sg(pct)}${Math.abs(pct).toFixed(2)}%)`,
+    `Best ${moves[0].sym} ${sg(moves[0].ch)}${Math.abs(moves[0].ch).toFixed(1)}% · worst ${moves.at(-1).sym} ${sg(moves.at(-1).ch)}${Math.abs(moves.at(-1).ch).toFixed(1)}%` +
+    (state.account?.totalAccountValue ? ` · net worth ${f(state.account.totalAccountValue)} EGP` : ''));
+  config.lastSummary = c.day; saveJson('config.json', config);
+}
+
+// Sidebar extras, cached: dividends (1 h), news (10 min, en/ar), backtest (1 h, ~2 years of daily closes).
+const extraCache = new Map();
+async function cached(key, ttl, fn) {
+  const hit = extraCache.get(key);
+  if (hit && Date.now() - hit.at < ttl) return hit.data;
+  const data = await fn();
+  extraCache.set(key, { at: Date.now(), data });
+  return data;
+}
+const dividends = (sym) => cached(`div:${sym}`, 3_600_000, async () => {
+  const j = await thndr(['get-dividends', `--symbol=${sym}`, '--limit=10']);
+  return { sym, dividends: j.dividends ?? [] };
+});
+const news = (sym, locale) => cached(`news:${sym}:${locale}`, 600_000, async () => {
+  const j = await thndr(['get-news', `--symbol=${sym}`, '--limit=8', `--locale=${locale}`, '--content-chars=200']);
+  return { sym, locale, items: (j.items ?? []).map(({ id, title, content, source, link, publishedAt }) => ({ id, title, content, source, link: /^https?:\/\//.test(link ?? '') ? link : null, publishedAt })) };
+});
+const backtestOf = (sym) => cached(`bt:${sym}`, 3_600_000, async () => {
+  const j = await thndr(['get-price-history', sym, '--resolution=1d', '--bars=500']);
+  const bars = j.candles ?? j.points;
+  return { sym, from: bars[0]?.time, to: bars.at(-1)?.time, ...backtest(bars.map((b) => b.close)) };
+});
+
 let running = null;
 function run() {
   // ponytail: one run at a time; a second click waits for the same run instead of hitting Thndr twice.
   running ??= (async () => {
     const { day } = cairo();
     const rows = [], errors = {};
+    let authFail = false;
     // Account totals for the net-worth card (cash = totalAccountValue - portfolioValue).
     try {
       const a = await thndr(['get-account-summary']);
       state.account = { totalAccountValue: a.totalAccountValue, portfolioValue: a.portfolioValue, availableCash: a.availableCash, buyingPower: a.buyingPower, currency: a.currency };
-    } catch {}
+    } catch (e) { if (AUTH_CODES.includes(e.code)) authFail = true; }
     // Stocks you own on Thndr are always watched and can't be removed. If this fails (not logged in), keep the last list.
     try {
       const { positions } = await thndr(['get-account-positions']);
@@ -132,10 +291,21 @@ function run() {
         for (const s of row.signals) fire(`${day}:${sym}:${s.rule}:${s.side}`, sym, s.side, row.price, s.why);
         checkRules(row);
       } catch (e) {
-        errors[sym] = ['NOT_AUTHENTICATED', 'SESSION_EXPIRED'].includes(e.code) ? 'Not logged in to Thndr. Click "Log in to Thndr" at the top.' : e.message;
+        if (AUTH_CODES.includes(e.code)) authFail = true;
+        errors[sym] = AUTH_CODES.includes(e.code) ? 'Not logged in to Thndr. Click "Log in to Thndr" at the top.' : e.message;
       }
     }
     Object.assign(state, { rows, errors, lastRun: new Date().toISOString() });
+    // Login expired: banner in the page + one notification (until it works again), instead of silently going stale.
+    state.authError = authFail ? 'Your Thndr login expired, so prices and alerts are paused. Click "Log in to Thndr" to continue.' : null;
+    if (authFail && !authNotified) notify('⚠️ Thndr Radar: login expired', 'Prices and alerts are paused. Open the app and log in to Thndr again.');
+    authNotified = authFail;
+    if (!authFail) {
+      await volumeSpikes(day).catch((e) => console.error('volume:', e.message));
+      syncStreams();
+      await newsAlerts().catch((e) => console.error('news:', e.message));
+      recordNetWorth(day);
+    }
     fetchLogos();
   })().finally(() => { running = null; });
   return running;
@@ -144,8 +314,11 @@ function run() {
 // Live prices: one snapshot call for all symbols. The page asks every 5 s, so nothing is fetched while the window is closed.
 // RSI/signal-now are recomputed with the live price; alerts still come only from the full 15-min run (no flapping).
 let living = null;
+let lastLive = 0;
 function live() {
-  if (running || !cairo().open) return Promise.resolve();
+  // Fallback polling (realtime streams do the real work): at most one snapshot per 25 s, however many pages ask.
+  if (running || !cairo().open || Date.now() - lastLive < 25_000) return Promise.resolve();
+  lastLive = Date.now();
   const syms = config.symbols.filter((s) => cache[s]);
   if (!syms.length) return Promise.resolve();
   living ??= thndr(['get-price-snapshot', ...syms]).then(({ quotes }) => {
@@ -156,7 +329,8 @@ function live() {
       const closes = c.lastDay === day ? [...c.closes.slice(0, -1), price] : [...c.closes, price];
       const i = state.rows.findIndex((r) => r.sym === q.ticker);
       if (i < 0) continue;
-      state.rows[i] = { ...analyze(q.ticker, closes), change: q.changePercent ?? null, signals: state.rows[i].signals };
+      state.rows[i] = { ...analyze(q.ticker, closes), change: q.changePercent ?? null, signals: state.rows[i].signals, volRatio: q.volume && q.averageVolume30d ? q.volume / q.averageVolume30d : state.rows[i].volRatio };
+      if (q.instrumentId) assetIds[q.ticker] = q.instrumentId;
       checkRules(state.rows[i]);
     }
     state.liveAt = new Date().toISOString();
@@ -199,6 +373,17 @@ function openWindow() {
   if (browser) run(browser, args);
   else if (process.platform === 'win32') run('cmd', ['/c', 'start', '', url]);
   else run(process.platform === 'darwin' ? 'open' : 'xdg-open', [url]);
+}
+
+// ---- Phone access (off by default): listen on the LAN too, every request from another device needs the secret token ----
+const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+const cookie = (req, name) => (req.headers.cookie ?? '').split(';').map((c) => c.trim().split('=')).find(([k]) => k === name)?.[1] ?? null;
+const tokenOk = (given, tok) => !!given && given.length === tok.length && timingSafeEqual(Buffer.from(given), Buffer.from(tok));
+const lanIps = () => Object.values(networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i.address);
+async function remoteInfo() {
+  const on = !!config.remote?.enabled, ip = lanIps()[0];
+  const url = on && ip ? `http://${ip}:${PORT}/?t=${config.remote.token}` : null;
+  return { enabled: on, url, ips: lanIps(), qrSvg: url ? await QRCode.toString(url, { type: 'svg', margin: 1 }) : null };
 }
 
 const SYMBOL = /^[A-Z0-9.]{1,12}$/; // passed to the thndr CLI, so keep it strict
@@ -263,15 +448,24 @@ async function body(req) {
 // Advice for each stock you hold, recomputed with the live price on every request.
 const advice = () => Object.fromEntries(state.rows.filter((r) => state.positions[r.sym]).map((r) => [r.sym, advise(r, state.positions[r.sym])]));
 const snapshot = () => ({
-  ...state, advice: advice(), log, rules: config.rules, logos, running: !!running, market: cairo().open, telegram: !!(config.telegramToken && config.telegramChat),
+  ...state, advice: advice(), log, rules: config.rules, logos, netHistory, remote: !!config.remote?.enabled, running: !!running, market: cairo().open, telegram: !!(config.telegramToken && config.telegramChat),
 });
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   const json = (data, code = 200) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(data)); };
   try {
-    // Block other websites from talking to this local server (DNS rebinding / CSRF):
-    // Host must be ours, and POSTs must be JSON (cross-site JSON needs a CORS preflight we never allow).
-    if (![`127.0.0.1:${PORT}`, `localhost:${PORT}`].includes(req.headers.host)) return json({ error: 'Bad host' }, 403);
+    // Block other websites from talking to this server (DNS rebinding / CSRF):
+    //  - from this computer: Host must be ours;
+    //  - from another device (phone access on): it must carry the secret token (cookie, or ?t= once, which sets the cookie).
+    //  POSTs must be JSON (cross-site JSON needs a CORS preflight we never allow).
+    if (isLocal(req)) {
+      if (![`127.0.0.1:${PORT}`, `localhost:${PORT}`].includes(req.headers.host)) return json({ error: 'Bad host' }, 403);
+    } else {
+      const tok = config.remote?.enabled && config.remote.token;
+      const fromQuery = new URL(req.url, 'http://x').searchParams.get('t');
+      if (!tok || !(tokenOk(fromQuery, tok) || tokenOk(cookie(req, 'radar'), tok))) return json({ error: 'Not allowed. Open the link shown in Thndr Radar on your computer.' }, 403);
+      if (fromQuery) { res.writeHead(302, { 'set-cookie': `radar=${tok}; HttpOnly; SameSite=Strict; Max-Age=31536000; Path=/`, location: '/' }); return res.end(); }
+    }
     if (req.method === 'POST' && req.headers['content-type'] !== 'application/json') return json({ error: 'JSON only' }, 415);
     if (req.method === 'GET' && req.url === '/') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -302,6 +496,36 @@ http.createServer(async (req, res) => {
       if (!SYMBOL.test(sym)) return json({ error: 'Invalid symbol' }, 400);
       const position = state.positions[sym] ?? null;
       try { return json({ ...(await fills(sym)), position }); } catch (e) { return json({ error: e.message, sym, position, fills: null, historyError: e.message }, 400); }
+    }
+    if (req.method === 'GET' && /^\/api\/(dividends|news|backtest)\?/.test(req.url)) {
+      const u = new URL(req.url, 'http://x'), sym = u.searchParams.get('sym') ?? '', kind = u.pathname.split('/')[2];
+      if (!SYMBOL.test(sym)) return json({ error: 'Invalid symbol' }, 400);
+      try {
+        if (kind === 'dividends') return json(await dividends(sym));
+        if (kind === 'news') return json(await news(sym, u.searchParams.get('locale') === 'ar' ? 'ar' : 'en'));
+        return json(await backtestOf(sym));
+      } catch (e) { return json({ error: e.message }, 400); }
+    }
+    if (req.method === 'GET' && req.url === '/api/remote') {
+      if (!isLocal(req)) return json({ error: 'Only from this computer' }, 403);
+      return json(await remoteInfo());
+    }
+    if (req.method === 'POST' && req.url === '/api/remote') {
+      // Turning phone access on/off is only allowed from this computer.
+      if (!isLocal(req)) return json({ error: 'Only from this computer' }, 403);
+      const { enabled, rotate } = await body(req);
+      config.remote = { enabled: !!enabled, token: rotate || !config.remote?.token ? randomBytes(24).toString('base64url') : config.remote.token };
+      saveJson('config.json', config);
+      json(await remoteInfo());
+      setTimeout(relisten, 200); // after the reply is sent (relisten closes open connections)
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/api/events') {
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+      res.write(': connected\n\n');
+      pages.add(res);
+      req.on('close', () => pages.delete(res));
+      return;
     }
     if (req.method === 'GET' && req.url === '/api/live') { await live(); return json(snapshot()); }
     if (req.method === 'POST' && req.url === '/api/refresh') { await run(); return json(snapshot()); }
@@ -347,12 +571,20 @@ http.createServer(async (req, res) => {
     }
     json({ error: 'Not found' }, 404);
   } catch (e) { json({ error: e.message }, 500); }
-}).on('error', (e) => {
-  if (e.code === 'EADDRINUSE') { console.log('Already running'); openWindow(); setTimeout(() => process.exit(0), 500); return; }
+});
+let started = false;
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE' && !started) { console.log('Already running'); openWindow(); setTimeout(() => process.exit(0), 500); return; }
   throw e;
-}).listen(PORT, '127.0.0.1', () => {
+});
+const host = () => (config.remote?.enabled ? '0.0.0.0' : '127.0.0.1');
+function relisten() { server.close(); server.closeAllConnections?.(); server.listen(PORT, host()); }
+server.listen(PORT, host(), () => {
+  if (started) return;
+  started = true;
   openWindow();
-  console.log(`EGX Alerts on http://127.0.0.1:${PORT}`);
+  console.log(`Thndr Radar on http://127.0.0.1:${PORT}${config.remote?.enabled ? ' (phone access on)' : ''}`);
   run();
   setInterval(() => { if (cairo().open) run(); }, 15 * 60 * 1000);
+  setInterval(() => { dailySummary(); syncStreams(); }, 60 * 1000);
 });
