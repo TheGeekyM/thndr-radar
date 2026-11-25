@@ -37,8 +37,10 @@ export function signals(closes) {
 }
 
 /** Where the stock stands right now (not only on crossing days). Same RSI thresholds as the alerts. */
-export function stance(price, rsi, sma50) {
+export function stance(price, rsi, sma50, pl = null) {
   if (rsi == null) return { side: 'HOLD', why: 'Not enough history' };
+  // Oversold but no support below (fresh lows) = falling knife: WAIT, same as the trade plan and the position advice.
+  if (rsi < RSI_BUY && pl && pl.buyLo == null) return { side: 'WAIT', why: `Oversold (RSI ${rsi.toFixed(0)}) but still making new lows: wait until it stops falling` };
   const trend = sma50 == null ? '' : price > sma50 ? 'uptrend (above 50-day avg)' : 'downtrend (below 50-day avg)';
   if (rsi < RSI_BUY) return { side: 'BUY', why: `Oversold, RSI ${rsi.toFixed(0)}${sma50 != null && price < sma50 ? '; still in a downtrend, so riskier' : ''}` };
   if (rsi > RSI_SELL) return { side: 'SELL', why: `Overbought, RSI ${rsi.toFixed(0)}${sma50 != null && price > sma50 ? '; uptrend may continue' : ''}` };
@@ -84,7 +86,7 @@ export function analyze(sym, closes) {
     sym, price, rsi, sma50,
     change: prev ? ((price - prev) / prev) * 100 : null,
     rsiTrail: closes.length > RSI_LEN ? rsiSeries(closes).slice(-30) : [],
-    now: stance(price, rsi, sma50),
+    now: stance(price, rsi, sma50, plan(closes)),
     plan: plan(closes),
     // Stop-loss as it stood before the latest bar: plan().stop always sits below today's price, so this is the one a drop can break.
     prevStop: closes.length > 22 ? plan(closes.slice(0, -1)).stop : null,
@@ -346,6 +348,7 @@ function selfTest() {
   assert(a.price === 120 && a.change < 0 && a.rsi !== null && a.sma50 !== null && a.rsiTrail.length === 30, 'analyze fields');
   assert(stance(10, 25, 12).side === 'BUY' && stance(10, 75, 8).side === 'SELL' && stance(10, 50, 9).side === 'HOLD', 'stance');
   assert(stance(10, null, null).side === 'HOLD', 'stance without history');
+  assert(stance(10, 25, 12, { buyLo: null }).side === 'WAIT' && stance(10, 25, 12, { buyLo: 9 }).side === 'BUY', 'oversold at fresh lows = WAIT');
   assert(ruleHit({ type: 'price_below', value: 7 }, { price: 6.9 }) && !ruleHit({ type: 'price_below', value: 7 }, { price: 7.1 }), 'price_below');
   assert(ruleHit({ type: 'rsi_above', value: 70 }, { rsi: 71 }) && !ruleHit({ type: 'rsi_above', value: 70 }, { rsi: null }), 'rsi_above');
   const b = analyze('X', [...Array.from({ length: 30 }, (_, i) => 100 + (i % 5)), 90]);

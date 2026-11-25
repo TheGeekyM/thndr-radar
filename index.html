@@ -125,6 +125,10 @@
   .nitem .nwhy { font-size: 12.5px; color: var(--muted); margin-top: 4px; white-space: normal; }
   button.link { border: 0; background: none; color: var(--accent); padding: 0; font-size: 13px; }
   .pill.INFO { color: var(--accent); background: var(--zone); }
+  .pill.WAIT { color: #b45309; background: #fef3c7; }
+  :root[data-theme="dark"] .pill.WAIT { color: #fbbf24; background: #3a2a0a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.WAIT { color: #fbbf24; background: #3a2a0a; } }
+  .mine { margin-left: 6px; font-size: 10.5px; color: var(--muted); font-weight: 600; }
   .vol { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 99px; color: #b45309; background: #fef3c7; }
   :root[data-theme="dark"] .vol { color: #fbbf24; background: #3a2a0a; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .vol { color: #fbbf24; background: #3a2a0a; } }
@@ -270,7 +274,7 @@
       </select>
     </div>
     <table id="watch">
-      <thead><tr><th>Symbol</th><th>Signal now</th><th>Price</th><th>Change</th><th>RSI (14)</th><th>RSI 30 days</th><th>50-day avg</th><th title="الاتجاه: هل السعر فوق ولا تحت متوسط سعره في آخر 50 يوم؟ فوق = بيطلع، تحت = بينزل">Trend</th><th>New alert today</th><th>Alerts</th><th></th></tr></thead>
+      <thead><tr><th>Symbol</th><th>Signal now</th><th>Price</th><th>Change</th><th>RSI (14)</th><th>RSI 30 days</th><th>50-day avg</th><th title="الاتجاه: هل السعر فوق ولا تحت متوسط سعره في آخر 50 يوم؟ فوق = بيطلع، تحت = بينزل">Trend</th><th>Last alert</th><th>Alerts</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
   </section>
@@ -374,6 +378,15 @@ function spark(vals) {
     <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>`;
 }
 
+// ---- One answer per stock: for stocks you own, your position's advice (server advise(), same as "My buys")
+// comes first; for the rest, the market signal (RSI + trade plan). ----
+const ADVICE_LABEL = { SELL: ['SELL', 'Sell / reduce'], TAKE_PROFIT: ['SELL', 'Take profit'], AVERAGE_DOWN: ['BUY', 'Average down'], WAIT: ['WAIT', 'Wait'], HOLD: ['HOLD', 'Hold'] };
+function signalOf(s, r) {
+  const a = s?.advice?.[r.sym];
+  if (a && ADVICE_LABEL[a.action]) return { cls: ADVICE_LABEL[a.action][0], label: ADVICE_LABEL[a.action][1], why: a.why, mine: true };
+  return { cls: r.now.side, label: r.now.side, why: r.now.why, mine: false };
+}
+
 // ---- Money helpers, logos, per-stock P&L, net-worth card ----
 const money = (n, d = 2) => (n == null || isNaN(n) ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 const signed = (n, d = 2) => (n > 0 ? '+' : n < 0 ? '−' : '') + money(Math.abs(n), d);
@@ -466,14 +479,14 @@ function render(s) {
     const zone = r.rsi == null ? '' : r.rsi < 30 ? 'up' : r.rsi > 70 ? 'down' : '';
     return `<tr data-sym="${esc(sym)}"${sym === sideSym ? ' class="sel"' : ''}>
       <td><div class="symcell">${logo(sym)}<b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></div></td>
-      <td style="white-space:normal;min-width:190px"><span class="pill ${esc(r.now.side)}">${esc(r.now.side)}</span><div class="muted" style="font-size:12px">${esc(r.now.why)}</div></td>
+      <td style="white-space:normal;min-width:190px">${(() => { const g = signalOf(s, r); return `<span class="pill ${g.cls}">${esc(g.label)}</span>${g.mine ? '<span class="mine">your position</span>' : ''}<div class="muted" style="font-size:12px">${esc(g.why)}</div>`; })()}</td>
       <td class="num pcell"><div class="p">${fmt(r.price)}</div>${pnlCell(s, r)}</td>
       <td class="num ${r.change >= 0 ? 'up' : 'down'}">${r.change == null ? '—' : (r.change >= 0 ? '+' : '') + fmt(r.change) + '%'}${r.volRatio >= 1.5 ? `<span class="vol" title="Volume today is ${fmt(r.volRatio, 1)}× the 30-day average: unusual interest">Vol ${fmt(r.volRatio, 1)}×</span>` : ''}</td>
       <td><div class="rsi"><b class="num ${zone}">${fmt(r.rsi, 1)}</b>${r.rsi == null ? '' : `<div class="bar"><i style="left:calc(${r.rsi}% - 1px)"></i></div>`}</div></td>
       <td>${spark(r.rsiTrail)}</td>
       <td class="num">${fmt(r.sma50)}</td>
       <td>${trend}</td>
-      <td>${r.signals.map((g) => `<span class="pill ${g.side}" title="${esc(g.why)}">${g.side}</span>`).join(' ') || '<span class="muted">—</span>'}</td>
+      <td>${(() => { const la = (s.log || []).find((e) => e.sym === sym); return la ? `<span class="pill ${la.side === 'BUY' ? 'BUY' : la.side === 'INFO' ? 'INFO' : 'SELL'}" title="${esc(la.why)}">${la.side === 'INFO' ? 'Info' : esc(la.side)}</span><div class="muted" style="font-size:11px">${ago(la.time)}</div>` : '<span class="muted">—</span>'; })()}</td>
       <td><button class="bell${(s.rules[sym] || []).length ? ' on' : ''}" data-rules="${esc(sym)}" title="Buy/sell alerts for ${esc(sym)}">${icon('bell')}${(s.rules[sym] || []).length ? `<span class="count">${s.rules[sym].length}</span>` : ''}</button></td>
       ${rm}</tr>`;
   }).join('') || `<tr><td colspan="11" class="muted">${s.running || !s.lastRun ? 'Loading your stocks…' : 'Add a symbol to start.'}</td></tr>`;
@@ -744,7 +757,7 @@ function renderSideHead() {
   if (price == null) { $('side-sub').innerHTML = ''; return; }
   const cls = (pct ?? 0) >= 0 ? 'up' : 'down', sign = (pct ?? 0) >= 0 ? '+' : '';
   $('side-sub').innerHTML = `<span class="big">${fmt(price)}</span><span class="chg ${cls}">${abs != null ? sign + fmt(abs) + ' ' : ''}(${sign}${fmt(pct)}%)</span>
-    ${r ? `<span class="pill ${r.now.side}" style="margin-left:8px" title="${esc(r.now.why)}">${r.now.side}</span>` : ''}`;
+    ${r ? (() => { const g = signalOf(last, r); return `<span class="pill ${g.cls}" style="margin-left:8px" title="${esc(g.why)}">${esc(g.label)}</span>`; })() : ''}`;
   renderPlan(); renderPos();
 }
 
@@ -1099,13 +1112,13 @@ function sortFilter(s, syms) {
   let out = syms.filter((x) => {
     const r = row(x);
     if (filterBy === 'mine') return held(x);
-    if (filterBy === 'BUY' || filterBy === 'SELL') return r?.now?.side === filterBy || r?.signals?.some((g) => g.side === filterBy);
+    if (filterBy === 'BUY' || filterBy === 'SELL') return (r && signalOf(s, r).cls === filterBy) || r?.signals?.some((g) => g.side === filterBy);
     if (filterBy === 'vol') return (r?.volRatio ?? 0) >= 1.5;
     return true;
   });
   const key = {
     pnl: (x) => -pnlPct(x), change: (x) => -(row(x)?.change ?? -Infinity), rsi: (x) => row(x)?.rsi ?? Infinity,
-    signal: (x) => ({ BUY: 0, HOLD: 1, SELL: 2 })[row(x)?.now?.side] ?? 3, vol: (x) => -(row(x)?.volRatio ?? 0), sym: (x) => x,
+    signal: (x) => (row(x) ? { BUY: 0, WAIT: 1, HOLD: 2, SELL: 3 }[signalOf(s, row(x)).cls] : 4), vol: (x) => -(row(x)?.volRatio ?? 0), sym: (x) => x,
   }[sortBy];
   if (key) out = [...out].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
   return out;
