@@ -9,18 +9,26 @@
     --bg: #f6f7f9; --panel: #fff; --text: #1b1f24; --muted: #69707a; --line: #e3e6ea;
     --buy: #127a3e; --buy-bg: #e3f4ea; --sell: #b42318; --sell-bg: #fbe7e5; --accent: #2457c5; --zone: #eef0f3; --notheld: #b7860b;
   }
+  /* Dark theme: follows the system unless the top-bar toggle picked one (data-theme on <html>) */
+  :root { color-scheme: light; --sb: #3b4049; --sb-hover: #22262c; }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #121417; --panel: #1b1e23; --text: #e7e9ec; --muted: #9aa1ab; --line: #2c3038;
       --buy: #4cc27a; --buy-bg: #173322; --sell: #f2776b; --sell-bg: #3a1c1a; --accent: #7aa2ff; --zone: #262a31; --notheld: #f2c94c;
+      color-scheme: dark; --sb: #4a505a; --sb-hover: #6b727d;
     }
+  }
+  :root[data-theme="dark"] {
+      --bg: #121417; --panel: #1b1e23; --text: #e7e9ec; --muted: #9aa1ab; --line: #2c3038;
+      --buy: #4cc27a; --buy-bg: #173322; --sell: #f2776b; --sell-bg: #3a1c1a; --accent: #7aa2ff; --zone: #262a31; --notheld: #f2c94c;
+      color-scheme: dark; --sb: #4a505a; --sb-hover: #6b727d;
   }
   * { box-sizing: border-box; }
   /* Dark, slim, rounded scrollbars (app runs in Chrome). Transparent border = padding around the thumb. */
   ::-webkit-scrollbar { width: 12px; height: 12px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #3b4049; border-radius: 99px; border: 3px solid transparent; background-clip: padding-box; }
-  ::-webkit-scrollbar-thumb:hover { background-color: #22262c; }
+  ::-webkit-scrollbar-thumb { background: var(--sb); border-radius: 99px; border: 3px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: var(--sb-hover); }
   ::-webkit-scrollbar-thumb:active { background-color: #111317; }
   ::-webkit-scrollbar-corner, ::-webkit-scrollbar-button { display: none; }
   body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--text); }
@@ -170,6 +178,7 @@
   <h1><span data-icon="activity"></span>EGX Alerts</h1>
   <span id="market" class="pill"></span>
   <span id="updated" class="muted"></span>
+  <button id="theme" class="x" style="border:1px solid var(--line);padding:7px" title="Dark / light mode"></button>
   <button id="login">Log in to Thndr</button>
   <button id="refresh" class="primary"><span data-icon="refresh"></span>Refresh</button>
 </header>
@@ -236,10 +245,31 @@ const ICONS = {
   check: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
   briefcase: '<rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
 };
 const icon = (n) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 document.querySelectorAll('[data-icon]').forEach((el) => { el.outerHTML = icon(el.dataset.icon); });
+
+// ---- Dark / light toggle (top bar). Remembered per browser; until clicked, follows the system theme. ----
+const sysDark = matchMedia('(prefers-color-scheme: dark)');
+const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : sysDark.matches;
+function paintThemeBtn() {
+  const dark = isDark();
+  $('theme').innerHTML = icon(dark ? 'sun' : 'moon');
+  $('theme').title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+}
+try { const t = localStorage.getItem('theme'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch {}
+$('theme').onclick = () => {
+  const next = isDark() ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('theme', next); } catch {}
+  paintThemeBtn();
+  if (typeof sideSym !== 'undefined' && sideSym) drawChart(); // chart colours come from CSS vars; redraw is cheap
+};
+sysDark.addEventListener('change', paintThemeBtn);
+paintThemeBtn();
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const fmt = (n, d = 2) => (n == null ? '—' : n.toFixed(d));
 
