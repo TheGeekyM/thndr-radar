@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EGX Alerts</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1b1f24; --muted: #69707a; --line: #e3e6ea;
+    --buy: #127a3e; --buy-bg: #e3f4ea; --sell: #b42318; --sell-bg: #fbe7e5; --accent: #2457c5; --zone: #eef0f3; --notheld: #b7860b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121417; --panel: #1b1e23; --text: #e7e9ec; --muted: #9aa1ab; --line: #2c3038;
+      --buy: #4cc27a; --buy-bg: #173322; --sell: #f2776b; --sell-bg: #3a1c1a; --accent: #7aa2ff; --zone: #262a31; --notheld: #f2c94c;
+    }
+  }
+  * { box-sizing: border-box; }
+  /* Dark, slim, rounded scrollbars (app runs in Chrome). Transparent border = padding around the thumb. */
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #3b4049; border-radius: 99px; border: 3px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: #22262c; }
+  ::-webkit-scrollbar-thumb:active { background-color: #111317; }
+  ::-webkit-scrollbar-corner, ::-webkit-scrollbar-button { display: none; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  h1 { font-size: 17px; margin: 0; margin-right: auto; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  main { padding: 20px; display: grid; gap: 20px; max-width: 1600px; margin: 0 auto; transition: margin-right .2s; }
+  body.side-open main, body.side-open footer { margin-right: 600px; }
+  /* sidebar open: drop the two least important columns (RSI 30 days, New alert today) so the table fits */
+  body.side-open #watch :is(th, td):is(:nth-child(6), :nth-child(9)) { display: none; }
+  #rows tr[data-sym] { cursor: pointer; }
+  #rows tr[data-sym]:hover td { background: var(--bg); }
+  #rows tr.sel td { background: var(--zone); }
+  /* Floating card under the top bar; --top is set from the header's real height in JS */
+  /* Sidebar: floating card under the top bar; --top is set from the header's real height in JS */
+  aside { position: fixed; top: var(--top, 83px); right: 20px; bottom: 20px; width: 580px; background: var(--panel);
+          border: 1px solid var(--line); border-radius: 12px; overflow-y: auto; z-index: 5;
+          box-shadow: 0 8px 28px rgb(0 0 0 / .10); transform: translateX(calc(100% + 40px)); transition: transform .2s; }
+  body.side-open aside { transform: none; }
+  aside .head { position: sticky; top: 0; z-index: 2; background: var(--panel); padding: 16px 20px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; gap: 12px; }
+  aside .head h3 { margin: 0; font-size: 20px; line-height: 1.2; }
+  aside .name { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  aside .big { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 8px; }
+  aside .chg { font-weight: 600; font-variant-numeric: tabular-nums; }
+  aside .sec { padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  aside .sec:last-child { border-bottom: 0; }
+  aside h2 { margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  .seg { display: inline-flex; background: var(--zone); border-radius: 8px; padding: 3px; gap: 2px; }
+  .seg button { border: 0; background: none; padding: 5px 11px; font-size: 12px; font-weight: 600; color: var(--muted); border-radius: 6px; }
+  .seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / .15); }
+  .seg.full { display: flex; margin-bottom: 14px; } .seg.full button { flex: 1; justify-content: center; padding: 7px; font-size: 13px; }
+  .chart { position: relative; height: 270px; margin-top: 12px; user-select: none; }
+  .chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .chart text { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .chart .tip { position: absolute; top: 0; pointer-events: none; background: var(--text); color: var(--panel); font-size: 12px; line-height: 1.4;
+                padding: 6px 9px; border-radius: 7px; white-space: nowrap; transform: translateX(-50%); display: none; z-index: 1; }
+  .plan-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .lvl { border-radius: 9px; padding: 9px 10px; background: var(--bg); border: 1px solid var(--line); }
+  .lvl .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .lvl .v { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; margin: 2px 0 1px; }
+  .lvl .d { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .lvl.buy { background: var(--buy-bg); border-color: transparent; } .lvl.buy .v { color: var(--buy); }
+  .lvl.stop { background: var(--sell-bg); border-color: transparent; } .lvl.stop .v { color: var(--sell); }
+  .lvl.tgt .v { color: var(--accent); }
+  .verdict { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 13px; }
+  .verdict .msg { flex: 1; }
+  .rr { font-weight: 700; padding: 3px 9px; border-radius: 99px; font-size: 12px; white-space: nowrap; }
+  .rr.good { background: var(--buy-bg); color: var(--buy); } .rr.ok { background: var(--zone); color: var(--text); } .rr.bad { background: var(--sell-bg); color: var(--sell); }
+  .hbtn { border: 1px solid var(--line); background: var(--panel); color: var(--accent); padding: 3px 9px; font-size: 12px; font-weight: 600; border-radius: 99px; text-transform: none; letter-spacing: 0; }
+  .hbtn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .help { direction: rtl; text-align: right; background: var(--zone); border-radius: 10px; padding: 12px 14px; margin: 10px 0 12px;
+          font-size: 14px; line-height: 1.9; font-family: "Noto Sans Arabic", "Segoe UI", Tahoma, system-ui, sans-serif; color: var(--text); }
+  .help p { margin: 0 0 6px; } .help p:last-child { margin: 0; }
+  .help b { font-weight: 700; } .help .note { color: var(--muted); font-size: 12px; }
+  .help bdi { font-variant-numeric: tabular-nums; }
+  .sechead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 12px; }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .stat .v { font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .range { grid-column: 1 / -1; }
+  .range .track { position: relative; height: 6px; border-radius: 3px; background: linear-gradient(to right, var(--sell-bg), var(--zone), var(--buy-bg)); margin: 8px 0 4px; }
+  .range .dot { position: absolute; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--panel); transform: translateX(-50%); }
+  .range .ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .book { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .book td, .book th { padding: 5px 8px; border: 0; }
+  .book th { font-size: 11px; }
+  .book .bid { color: var(--buy); font-weight: 600; } .book .ask { color: var(--sell); font-weight: 600; }
+  .book td.q { color: var(--muted); } .book td.o { color: var(--muted); font-size: 11px; }
+  .book td.l { background: linear-gradient(to left, var(--buy-bg) var(--w), transparent var(--w)); }
+  .book td.r { background: linear-gradient(to right, var(--sell-bg) var(--w), transparent var(--w)); }
+  .press { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 4px 0 6px; }
+  .press .b { background: var(--buy); } .press .a { background: var(--sell); }
+  .tape { width: 100%; border-collapse: collapse; }
+  .tape td, .tape th { padding: 5px 8px; border: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .tape th { font-size: 11px; }
+  .tape tr:nth-child(even) td { background: var(--bg); }
+  /* Your average buy price under the price (held stocks); click = "My buys" tab in the sidebar */
+  .avgb { display: block; border: 0; background: none; padding: 0; margin-top: 1px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .avgb:hover { color: var(--accent); text-decoration: underline; }
+  #side-tabs { margin-top: 10px; } #side-tabs:empty { display: none; }
+  .rec { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: var(--zone); }
+  .rec .ic { width: 20px; height: 20px; margin-top: 1px; }
+  .rec .t { font-weight: 700; font-size: 15px; } .rec .w { font-size: 13px; margin-top: 2px; }
+  .rec.BUY { background: var(--buy-bg); } .rec.BUY .ic, .rec.BUY .t { color: var(--buy); }
+  .rec.SELL { background: var(--sell-bg); } .rec.SELL .ic, .rec.SELL .t { color: var(--sell); }
+  .rec.AVG .ic, .rec.AVG .t { color: var(--accent); }
+  .tape td.r, .tape th.r { text-align: right; }
+  @media (max-width: 1300px) { body.side-open main, body.side-open footer { margin-right: 0; } aside { width: auto; left: 16px; right: 16px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-weight: 500; color: var(--muted); font-size: 12px; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+  .BUY { color: var(--buy); background: var(--buy-bg); }
+  .HOLD { color: var(--muted); background: var(--zone); }
+  .SELL { color: var(--sell); background: var(--sell-bg); }
+  .notheld { color: var(--notheld); }
+  .up { color: var(--buy); } .down { color: var(--sell); }
+  .rsi { display: flex; align-items: center; gap: 8px; }
+  .bar { position: relative; width: 110px; height: 8px; border-radius: 4px;
+         background: linear-gradient(to right, var(--buy-bg) 0 30%, var(--zone) 30% 70%, var(--sell-bg) 70% 100%); }
+  .bar i { position: absolute; top: -3px; width: 3px; height: 14px; border-radius: 2px; background: var(--text); }
+  svg.spark { display: block; }
+  button, input { font: inherit; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 6px 12px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.x { border: 0; background: none; color: var(--muted); padding: 4px; border-radius: 6px; display: inline-flex; }
+  button.x:hover { background: var(--zone); color: var(--text); }
+  .ic { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
+  button, .pill, h1 { display: inline-flex; align-items: center; gap: 6px; }
+  h1 .ic { width: 22px; height: 22px; color: var(--accent); }
+  .pill .ic { width: 13px; height: 13px; }
+  .spin .ic { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .count { font-size: 11px; font-weight: 700; background: var(--accent); color: #fff; border-radius: 99px; padding: 0 6px; line-height: 16px; }
+  .trend { display: inline-flex; align-items: center; gap: 5px; }
+  button:disabled { opacity: .6; cursor: wait; }
+  form { display: flex; gap: 8px; margin-bottom: 12px; }
+  input { width: 140px; text-transform: uppercase; }
+  input::placeholder { text-transform: none; }
+  .err { color: var(--sell); font-size: 12px; white-space: normal; }
+  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); padding: 22px; width: min(420px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgb(0 0 0 / .45); }
+  dialog h3 { margin: 0 0 14px; font-size: 17px; }
+  dialog p { margin: 0 0 12px; }
+  dialog .row { display: flex; gap: 8px; margin-bottom: 10px; }
+  dialog .row input { flex: 1; width: auto; text-transform: none; }
+  dialog textarea { width: 100%; height: 90px; font: 12px monospace; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--text); padding: 8px; margin-bottom: 10px; }
+  dialog .close { position: absolute; top: 10px; right: 10px; margin: 0; }
+  .link { border: 0; background: none; color: var(--accent); padding: 0; font-size: 13px; }
+  .qr { background: #fff; border-radius: 8px; padding: 8px; width: 220px; margin: 0 auto 12px; }
+  .qr svg { display: block; width: 100%; height: auto; }
+  .center { text-align: center; }
+  .rule { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .bell { padding: 5px 8px; }
+  .bell.on { color: var(--accent); border-color: var(--accent); }
+  select { font: inherit; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 6px; }
+  dialog { width: min(480px, calc(100vw - 32px)); }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 20px 20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span data-icon="activity"></span>EGX Alerts</h1>
+  <span id="market" class="pill"></span>
+  <span id="updated" class="muted"></span>
+  <button id="login">Log in to Thndr</button>
+  <button id="refresh" class="primary"><span data-icon="refresh"></span>Refresh</button>
+</header>
+<main>
+  <section>
+    <h2>Watchlist</h2>
+    <form id="add" style="align-items:center"><input id="sym" placeholder="e.g. HRHO" maxlength="12" required><button id="addbtn"><span data-icon="plus"></span>Add</button><span id="add-err" class="err"></span></form>
+    <table id="watch">
+      <thead><tr><th>Symbol</th><th>Signal now</th><th>Price</th><th>Change</th><th>RSI (14)</th><th>RSI 30 days</th><th>50-day avg</th><th title="الاتجاه: هل السعر فوق ولا تحت متوسط سعره في آخر 50 يوم؟ فوق = بيطلع، تحت = بينزل">Trend</th><th>New alert today</th><th>Alerts</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Alerts log</h2>
+    <table>
+      <thead><tr><th>Time</th><th>Symbol</th><th>Signal</th><th>Price</th><th>Reason</th></tr></thead>
+      <tbody id="log"></tbody>
+    </table>
+  </section>
+</main>
+<dialog id="dlg">
+  <form method="dialog" class="close"><button class="x" title="Close"><span data-icon="x"></span></button></form>
+  <h3 id="dlg-title">Thndr login</h3>
+  <div id="dlg-body"></div>
+  <p id="dlg-msg" class="err"></p>
+</dialog>
+<aside id="side" aria-label="Stock details">
+  <div class="head">
+    <div style="flex:1;min-width:0">
+      <h3 id="side-sym"></h3><div class="name" id="side-name"></div>
+      <div id="side-sub"></div>
+      <div class="seg" id="side-tabs"></div>
+    </div>
+    <button class="x" id="side-close" title="Close (Esc)"><span data-icon="x"></span></button>
+  </div>
+  <div id="side-pos" hidden></div>
+  <div id="side-main">
+  <div class="sec" id="plan"></div>
+  <div class="sec">
+    <div class="seg" id="ranges"></div>
+    <div id="chart-help"></div>
+    <div class="chart" id="chart"></div>
+  </div>
+  <div class="sec"><div id="stats-head"></div><div class="stats" id="stats"></div></div>
+  <div class="sec">
+    <div class="seg full" id="tabs"></div>
+    <div id="pane"><p class="muted">Loading…</p></div>
+  </div>
+  </div>
+</aside>
+<footer>Signal now: BUY when RSI &lt; 30 (oversold), SELL when RSI &gt; 70 (overbought), otherwise HOLD · Alerts fire on the day a rule crosses · Mechanical rules, not financial advice. Data from Thndr via thndr-mcp.</footer>
+<script>
+const $ = (id) => document.getElementById(id);
+// Lucide icons (lucide.dev, ISC license), inlined: no extra files or network.
+const ICONS = {
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  up: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+  down: '<polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/>',
+  login: '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/>',
+  check: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  briefcase: '<rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+};
+const icon = (n) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+document.querySelectorAll('[data-icon]').forEach((el) => { el.outerHTML = icon(el.dataset.icon); });
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const fmt = (n, d = 2) => (n == null ? '—' : n.toFixed(d));
+
+function spark(vals) {
+  if (vals.length < 2) return '';
+  const w = 120, h = 30, y = (v) => h - (v / 100) * h;
+  const pts = vals.map((v, i) => `${((i / (vals.length - 1)) * w).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <line x1="0" x2="${w}" y1="${y(30)}" y2="${y(30)}" stroke="var(--buy)" stroke-dasharray="2 3" stroke-width="1"/>
+    <line x1="0" x2="${w}" y1="${y(70)}" y2="${y(70)}" stroke="var(--sell)" stroke-dasharray="2 3" stroke-width="1"/>
+    <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>`;
+}
+
+let last = null, sideSym = null;
+function render(s) {
+  last = s;
+  if (view.startsWith('rules:') && $('dlg').open) renderRules();
+  $('market').textContent = s.market ? 'Market open' : 'Market closed';
+  $('market').className = 'pill ' + (s.market ? 'BUY' : '');
+  const at = s.liveAt && s.liveAt > (s.lastRun || '') ? s.liveAt : s.lastRun;
+  $('updated').textContent = s.running ? 'Updating…' : at ? (s.market ? 'Live · ' : 'Updated ') + new Date(at).toLocaleTimeString() : '';
+  $('refresh').disabled = s.running;
+  $('refresh').classList.toggle('spin', !!s.running);
+
+  const syms = [...new Set([...s.rows.map((r) => r.sym), ...Object.keys(s.errors)])];
+  $('rows').innerHTML = syms.map((sym) => {
+    const r = s.rows.find((x) => x.sym === sym);
+    const rm = s.held.includes(sym)
+      ? `<td><span class="pill HOLD" title="You own this on Thndr">${icon('briefcase')}In portfolio</span></td>`
+      : `<td><button class="x" data-rm="${esc(sym)}" title="Remove from watchlist">${icon('x')}</button></td>`;
+    if (!r) return `<tr><td><b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></td><td colspan="9" class="err">${esc(s.errors[sym])}</td>${rm}</tr>`;
+    // Arabic hover explanation with this stock's numbers
+    const gap = r.sma50 == null ? 0 : ((r.price - r.sma50) / r.sma50) * 100;
+    const trendTip = r.sma50 == null ? '' : r.price > r.sma50
+      ? `اتجاه صاعد: السعر الحالي ${fmt(r.price)} أعلى من متوسط سعره في آخر 50 يوم (${fmt(r.sma50)}) بنسبة ${fmt(gap, 1)}%. يعني السهم في الفترة الأخيرة بيطلع أكتر ما بينزل، ودي علامة كويسة للي شاري.`
+      : `اتجاه هابط: السعر الحالي ${fmt(r.price)} أقل من متوسط سعره في آخر 50 يوم (${fmt(r.sma50)}) بنسبة ${fmt(Math.abs(gap), 1)}%. يعني السهم في الفترة الأخيرة بينزل أكتر ما بيطلع، فالأفضل تستنى قبل ما تشتري لحد ما يرجع فوق المتوسط.`;
+    const trend = r.sma50 == null ? '<span title="مفيش بيانات كفاية لحساب الاتجاه">—</span>' : r.price > r.sma50
+      ? `<span class="trend up" title="${esc(trendTip)}">${icon('up')}Above avg</span>`
+      : `<span class="trend down" title="${esc(trendTip)}">${icon('down')}Below avg</span>`;
+    const zone = r.rsi == null ? '' : r.rsi < 30 ? 'up' : r.rsi > 70 ? 'down' : '';
+    return `<tr data-sym="${esc(sym)}"${sym === sideSym ? ' class="sel"' : ''}>
+      <td><b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></td>
+      <td style="white-space:normal;min-width:190px"><span class="pill ${esc(r.now.side)}">${esc(r.now.side)}</span><div class="muted" style="font-size:12px">${esc(r.now.why)}</div></td>
+      <td class="num">${fmt(r.price)}${s.avgCost?.[sym] ? `<button class="avgb" data-avg="${esc(sym)}" title="Your average buy price (from Thndr). Click for all your buys">Avg ${fmt(s.avgCost[sym])} EGP</button>` : ''}</td>
+      <td class="num ${r.change >= 0 ? 'up' : 'down'}">${r.change == null ? '—' : (r.change >= 0 ? '+' : '') + fmt(r.change) + '%'}</td>
+      <td><div class="rsi"><b class="num ${zone}">${fmt(r.rsi, 1)}</b>${r.rsi == null ? '' : `<div class="bar"><i style="left:calc(${r.rsi}% - 1px)"></i></div>`}</div></td>
+      <td>${spark(r.rsiTrail)}</td>
+      <td class="num">${fmt(r.sma50)}</td>
+      <td>${trend}</td>
+      <td>${r.signals.map((g) => `<span class="pill ${g.side}" title="${esc(g.why)}">${g.side}</span>`).join(' ') || '<span class="muted">—</span>'}</td>
+      <td><button class="bell${(s.rules[sym] || []).length ? ' on' : ''}" data-rules="${esc(sym)}" title="Buy/sell alerts for ${esc(sym)}">${icon('bell')}${(s.rules[sym] || []).length ? `<span class="count">${s.rules[sym].length}</span>` : ''}</button></td>
+      ${rm}</tr>`;
+  }).join('') || `<tr><td colspan="11" class="muted">${s.running || !s.lastRun ? 'Loading your stocks…' : 'Add a symbol to start.'}</td></tr>`;
+
+  $('log').innerHTML = s.log.map((e) => `<tr>
+      <td class="muted">${esc(new Date(e.time).toLocaleString())}</td>
+      <td><b>${esc(e.sym)}</b></td>
+      <td><span class="pill ${e.side === 'BUY' ? 'BUY' : 'SELL'}">${esc(e.side)}</span></td>
+      <td class="num">${fmt(e.price)}</td>
+      <td style="white-space:normal">${esc(e.why)}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="muted">No alerts yet. They appear here and as desktop notifications.</td></tr>';
+}
+
+async function api(path, data) {
+  const res = await fetch(path, data === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error);
+  render(j);
+}
+const load = () => api('/api/state').catch(() => { $('updated').textContent = 'App server not running'; });
+
+$('refresh').onclick = () => { $('refresh').disabled = true; $('refresh').classList.add('spin'); $('updated').textContent = 'Updating…'; api('/api/refresh', {}).catch((e) => { $("updated").textContent = e.message; }); };
+// Loading state lives on the Add button itself (spinner + "Adding…"), errors next to it.
+$('add').onsubmit = async (ev) => {
+  ev.preventDefault();
+  const v = $('sym').value.trim().toUpperCase(), btn = $('addbtn'), label = btn.innerHTML;
+  btn.disabled = $('sym').disabled = true; btn.classList.add('spin'); btn.innerHTML = `${icon('refresh')}Adding ${esc(v)}…`; $('add-err').textContent = '';
+  try { await api('/api/symbols', { add: v }); $('sym').value = ''; } catch (e) { $('add-err').textContent = e.message; }
+  btn.disabled = $('sym').disabled = false; btn.classList.remove('spin'); btn.innerHTML = label; $('sym').focus();
+};
+$('rows').onclick = (ev) => {
+  const rm = ev.target.dataset.rm, bell = ev.target.closest('[data-rules]');
+  if (rm) api('/api/symbols', { remove: rm }).catch((e) => { $('updated').textContent = e.message; });
+  if (bell) openRules(bell.dataset.rules);
+  const avgB = ev.target.closest('[data-avg]');
+  if (avgB) openSide(avgB.dataset.avg, 'pos');
+  const tr = ev.target.closest('tr[data-sym]');
+  if (tr && !ev.target.closest('button')) openSide(tr.dataset.sym);
+};
+
+// ---- Per-stock alerts: suggested buy/sell levels + your own ----
+const TYPES = { price_below: 'Price ≤', price_above: 'Price ≥', rsi_below: 'RSI ≤', rsi_above: 'RSI ≥' };
+const r2 = (n) => Math.round(n * 100) / 100;
+
+function suggestions(row, avg) {
+  const out = [];
+  // Skip a level the price already broke through: below support is a breakdown, not a buy zone.
+  if (row.support != null && row.support < row.price) out.push({ side: 'BUY', type: 'price_below', value: r2(row.support), note: 'Near 20-day low (support)' });
+  if (row.resistance != null && row.resistance > row.price) out.push({ side: 'SELL', type: 'price_above', value: r2(row.resistance), note: 'Near 20-day high (resistance)' });
+  if (avg) out.push(avg > row.price
+    ? { side: 'SELL', type: 'price_above', value: r2(avg), note: 'Back to your cost (break-even)' }
+    : { side: 'SELL', type: 'price_below', value: r2(avg), note: 'Falling back to your cost (protect profit)' });
+  return out;
+}
+
+function openRules(sym) {
+  view = 'rules:' + sym; msg();
+  $('dlg-title').textContent = `Alerts for ${sym}`;
+  renderRules();
+  if (!$('dlg').open) $('dlg').showModal();
+}
+
+function renderRules() {
+  const sym = view.slice(6), row = last.rows.find((r) => r.sym === sym);
+  const mine = last.rules[sym] || [], avg = last.avgCost?.[sym];
+  if (!row) { $('dlg-body').innerHTML = '<p class="muted">No price data for this stock yet.</p>'; return; }
+  const dist = (v, type) => type.startsWith('price') ? ` <span class="muted">(${v >= row.price ? '+' : ''}${fmt(((v - row.price) / row.price) * 100, 1)}%)</span>` : '';
+  const line = (r) => `<span class="pill ${r.side}">${r.side}</span> when <b>${TYPES[r.type]} ${r.value}</b>${dist(r.value, r.type)}${r.note ? `<br><span class="muted" style="font-size:12px">${esc(r.note)}</span>` : ''}`;
+  const sugg = suggestions(row, avg).filter((g) => !mine.some((m) => m.type === g.type && m.value === g.value));
+  $('dlg-body').innerHTML = `
+    <p class="muted">Now ${fmt(row.price)} · RSI ${fmt(row.rsi, 1)}${avg ? ` · your avg cost ${fmt(avg)}` : ''}</p>
+    <h2>Suggested</h2>
+    ${sugg.map((g, i) => `<div class="rule"><div>${line(g)}</div><button data-sugg="${i}">${icon('plus')}Add</button></div>`).join('') || '<p class="muted">All suggestions added.</p>'}
+    <h2 style="margin-top:14px">Your alerts</h2>
+    ${mine.map((r) => `<div class="rule"><div>${line(r)}</div><button class="x" data-del="${esc(r.id)}" title="Delete alert">${icon('trash')}</button></div>`).join('') || '<p class="muted">None yet.</p>'}
+    <h2 style="margin-top:14px">Custom</h2>
+    <form id="rf" class="row" style="flex-wrap:wrap">
+      <select id="rside"><option>BUY</option><option>SELL</option></select>
+      <select id="rtype">${Object.entries(TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+      <input id="rval" type="number" step="any" min="0" placeholder="${fmt(row.price)}" required style="width:90px;flex:none">
+      <button class="primary">${icon('plus')}Add</button>
+    </form>
+    <p class="muted" style="font-size:12px">You get a desktop notification when an alert is reached (once a day per alert), checked every 5 s while this window is open, every 15 min otherwise.</p>`;
+  const save = (data) => api('/api/rules', { sym, ...data }).catch((e) => msg(e.message));
+  $('dlg-body').querySelectorAll('[data-sugg]').forEach((b) => { b.onclick = () => save({ add: sugg[b.dataset.sugg] }); });
+  $('dlg-body').querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => save({ remove: b.dataset.del }); });
+  $('rf').onsubmit = (ev) => { ev.preventDefault(); save({ add: { side: $('rside').value, type: $('rtype').value, value: $('rval').value, note: 'Custom' } }); };
+}
+// ---- Thndr login (email code -> approve on phone), same steps as `thndr login` ----
+async function loginCall(step, value) {
+  const res = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ step, value }) });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error);
+  return j;
+}
+const msg = (t = '') => { $('dlg-msg').textContent = t; };
+let view = '';
+
+function show(name, data = {}) {
+  view = name; msg();
+  const b = $('dlg-body');
+  if (name === 'email') b.innerHTML = `
+    <p>Enter the email of your Thndr account. Thndr will email you a 6-digit code.</p>
+    <form class="row" id="f"><input id="v" type="email" placeholder="you@example.com" required autofocus><button class="primary">Send code</button></form>
+    <button class="link" id="alt">Signed up with Google or Apple? Use a browser session instead</button>`;
+  if (name === 'code') b.innerHTML = `
+    <p>Enter the code sent to <b>${esc(data.maskedEmail || 'your email')}</b>.</p>
+    <form class="row" id="f"><input id="v" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="8" required autofocus><button class="primary">Verify</button></form>
+    <button class="link" id="back">Use a different email</button>`;
+  if (name === 'qr') b.innerHTML = `
+    <p>Approve this login in the <b>Thndr app on your phone</b>: scan the QR code with your phone camera, or open the link on your phone.${data.humanId ? ` Request <b>${esc(data.humanId)}</b>.` : ''}</p>
+    <div class="qr">${data.qrSvg}</div>
+    <p class="center"><a href="${esc(data.deepLink)}" style="color:var(--accent)">Open link</a> · <span class="muted" id="wait">Waiting for approval…</span></p>`;
+  if (name === 'expired') b.innerHTML = `
+    <p>Your Thndr session expired. Approve a new login on your phone (no email code needed).</p>
+    <p><button class="primary" id="again">Send approval to phone</button></p>
+    <button class="link" id="back">Log in with email instead</button>`;
+  if (name === 'cookie') b.innerHTML = `
+    <p>1. Log in at <b>x.thndr.app</b> in your browser.<br>2. Press F12 → Network, click any <b>x.thndr.app/api</b> request.<br>3. Copy the value of its <b>Cookie</b> request header and paste it here.</p>
+    <form id="f"><textarea id="v" required placeholder="Cookie header value"></textarea><button class="primary">Import session</button></form>
+    <button class="link" id="back">Back to email login</button>`;
+  if (name === 'done') b.innerHTML = `
+    <p style="display:flex;gap:8px"><span class="up">${icon('check')}</span><span>Logged in to Thndr. ${data.sessionExpiresAt ? `Session valid until ${esc(new Date(data.sessionExpiresAt).toLocaleString())}; it renews by itself.` : 'The session renews by itself.'}</span></p>
+    <p><button class="primary" id="ok">Done</button> <button id="out">Log out</button></p>`;
+
+  const busy = (on) => b.querySelectorAll('button, input, textarea').forEach((el) => { el.disabled = on; });
+  const step = async (s, v, next) => { busy(true); msg(); try { await next(await loginCall(s, v)); } catch (e) { msg(e.message); } busy(false); };
+  const on = (id, fn) => { const el = b.querySelector('#' + id); if (el) el.onclick = fn; };
+  const f = b.querySelector('#f');
+  if (f) f.onsubmit = (ev) => {
+    ev.preventDefault();
+    const v = $('v').value;
+    if (name === 'email') step('start', v, (r) => show('code', r));
+    if (name === 'code') step('code', v, (r) => show('qr', r));
+    if (name === 'cookie') step('cookie', v, () => { setAuth(true); show('done'); });
+  };
+  on('alt', () => show('cookie'));
+  on('back', () => show('email'));
+  on('again', () => step('approve', '', (r) => show('qr', r)));
+  on('ok', () => $('dlg').close());
+  on('out', () => step('logout', '', () => { setAuth(false); show('email'); }));
+  if (name === 'qr') waitForApproval();
+}
+
+async function waitForApproval() {
+  // login-complete waits up to 5 s on the server per call, so this polls gently.
+  while (view === 'qr' && $('dlg').open) {
+    try {
+      const r = await loginCall('complete');
+      if (r.authenticated) { setAuth(true); show('done', r); return; }
+      if (r.status === 'rejected' || r.status === 'expired') { show('expired'); msg(`The login request was ${r.status}. Try again.`); return; }
+    } catch (e) { msg(e.message); await new Promise((ok) => setTimeout(ok, 5000)); }
+  }
+}
+
+function setAuth(ok) {
+  $('login').innerHTML = ok ? `<span class="up" style="display:inline-flex">${icon('check')}</span>Thndr` : `${icon('login')}Log in to Thndr`;
+  $('login').className = ok ? '' : 'primary';
+}
+
+async function openLogin() {
+  $('dlg-title').textContent = 'Thndr login';
+  msg(); $('dlg-body').innerHTML = '<p class="muted">Checking…</p>';
+  if (!$('dlg').open) $('dlg').showModal();
+  try {
+    const s = await loginCall('status');
+    setAuth(s.authenticated);
+    if (s.authenticated) show('done', s);
+    else if (s.pendingStep === 'verify_code') show('code');
+    else if (s.identified) show('expired');
+    else show('email');
+  } catch (e) { show('email'); msg(e.message); }
+}
+
+$('login').onclick = openLogin;
+loginCall('status').then((s) => { setAuth(s.authenticated); if (!s.authenticated) openLogin(); }).catch(() => {});
+// ---- Right sidebar: chart, key stats, order book / trades for the clicked stock ----
+const cairoTime = (t) => new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Africa/Cairo' });
+const qty = (n) => (n ?? 0).toLocaleString('en-US');
+const compact = (n) => (n == null ? '—' : new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n));
+const RANGES = ['1D', '1W', '1M', '3M', '1Y', '5Y'];
+let book = null, bookBusy = false, chartData = null, chartBusy = false, hovering = false, sideRange = '1D', sideTab = 'book';
+
+function openSide(sym, view = 'market') {
+  if (sideSym !== sym) { book = null; chartData = null; fillsData = null; $('chart').innerHTML = ''; $('stats').innerHTML = ''; $('pane').innerHTML = '<p class="muted">Loading…</p>'; }
+  sideSym = sym; sideView = view;
+  document.body.classList.add('side-open');
+  document.querySelectorAll('#rows tr').forEach((tr) => tr.classList.toggle('sel', tr.dataset.sym === sym));
+  $('side-sym').textContent = sym;
+  renderSideTabs(); renderSideHead(); renderControls();
+  loadBook(); loadChart();
+}
+function closeSide() {
+  sideSym = null; document.body.classList.remove('side-open');
+  document.querySelectorAll('#rows tr.sel').forEach((tr) => tr.classList.remove('sel'));
+}
+$('side-close').onclick = closeSide;
+const placeSide = () => document.documentElement.style.setProperty('--top', document.querySelector('header').offsetHeight + 20 + 'px');
+placeSide();
+addEventListener('resize', () => { placeSide(); if (sideSym) drawChart(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('dlg').open) closeSide(); });
+
+// ---- "اشرح" buttons: plain-Arabic explanations for each sidebar section ----
+const helpOpen = new Set();
+const helpBtn = (k) => `<button class="hbtn${helpOpen.has(k) ? ' on' : ''}" data-help="${k}" title="اشرح لي بالعربي">${icon('help')}اشرح</button>`;
+const helpBox = (k, ...a) => (helpOpen.has(k) ? `<div class="help" dir="rtl" lang="ar">${HELP[k](...a)}</div>` : '');
+const n = (v) => `<bdi>${fmt(v)}</bdi>`;
+const HELP = {
+  plan: (r, pl, avg) => {
+    const out = [];
+    if (pl.buyLo == null) out.push(`<p><b>منطقة الشراء: مفيش دلوقتي.</b> السهم بيسجل أقل أسعار جديدة، يعني لسه بينزل ومفيش سعر قريب "وقف" عنده قبل كده. الأفضل تستنى لحد ما يبطل ينزل (مثلاً كام يوم من غير قاع جديد).</p>`);
+    else out.push(`<p><b>منطقة الشراء (${n(pl.buyLo)} – ${n(pl.buyHi)}):</b> ده سعر السهم وقف عنده عن النزول قبل كده (اسمه <b>دعم</b>). لو السعر نزل للمنطقة دي، يبقى سعر أنسب للشراء من السعر الحالي ${n(r.price)}.${pl.inZone ? ' <b>السعر دلوقتي جوه منطقة الشراء.</b>' : ''}</p>`);
+    out.push(`<p><b>وقف الخسارة (${n(pl.stop)}):</b> لو اشتريت والسعر نزل تحت الرقم ده، يبقى الخطة باظت. الأفضل تبيع عشان الخسارة ما تكبرش. ده بيحميك من خسارة كبيرة.</p>`);
+    if (pl.t1 != null) out.push(`<p><b>الهدف الأول (${n(pl.t1)})${pl.t2 != null ? ` والتاني (${n(pl.t2)})` : ''}:</b> أسعار أعلى السهم وقف عندها قبل كده (اسمها <b>مقاومة</b>). أماكن مناسبة إنك تبيع جزء أو كل الكمية بربح.</p>`);
+    if (pl.rr != null) out.push(`<p><b>المخاطرة للعائد 1 : <bdi>${pl.rr}</bdi>:</b> يعني لو اشتريت من منطقة الشراء، مقابل كل 1 جنيه ممكن تخسره (لحد وقف الخسارة)، ممكن تكسب <bdi>${pl.rr}</bdi> جنيه (لحد الهدف الأول). أكتر من 2 يعتبر كويس، وأقل من 1 يعتبر مش مستاهل.</p>`);
+    out.push(`<p><b>الحركة اليومية المعتادة (±${n(pl.move)}):</b> السهم بيطلع أو ينزل في المتوسط بالمقدار ده في اليوم الواحد.</p>`);
+    if (avg) out.push(`<p><b>إنت شاري السهم ده بمتوسط ${n(avg)}.</b> ${avg > r.price ? `إنت خسران دلوقتي <bdi>${fmt(((r.price - avg) / avg) * 100, 1)}%</bdi>. لو رجع لـ ${n(avg)} تبقى خرجت من غير خسارة (التعادل).` : `إنت كسبان دلوقتي <bdi>+${fmt(((r.price - avg) / avg) * 100, 1)}%</bdi>.`} لو قفل تحت ${n(pl.stop)} فكّر تقلل الكمية عشان الخسارة ما تكبرش.</p>`);
+    out.push(`<p class="note">الأرقام دي محسوبة من حركة السعر في آخر 20–60 يوم. مش توقع مضمون ولا نصيحة مالية. زرار <bdi>"Alert me at these prices"</bdi> بيبعتلك تنبيه لما السعر يوصل للأرقام دي.</p>`);
+    return out.join('');
+  },
+  chart: () => `
+    <p><b>الخط:</b> سعر السهم خلال الفترة اللي اخترتها: <bdi>1D</bdi> النهارده، <bdi>1W</bdi> أسبوع، <bdi>1M</bdi> شهر، <bdi>3M</bdi> تلات شهور، <bdi>1Y</bdi> سنة، <bdi>5Y</bdi> خمس سنين.</p>
+    <p><b>اللون:</b> أخضر لو السعر دلوقتي أعلى من بداية الفترة (أو إغلاق امبارح في <bdi>1D</bdi>)، وأحمر لو أقل.</p>
+    <p><b>الخط الرمادي المتقطع:</b> سعر إغلاق امبارح (في <bdi>1D</bdi>) أو السعر في أول الفترة، عشان تقارن بيه.</p>
+    <p><b>الأعمدة الصغيرة تحت:</b> حجم التداول، يعني عدد الأسهم اللي اتباعت واتشرت. عمود عالي = اهتمام كبير بالسهم في الوقت ده.</p>
+    <p><b>الخطوط الملونة:</b> المنطقة الخضرا <b>Buy</b> = منطقة الشراء، الأحمر <b>Stop</b> = وقف الخسارة، الأزرق <b>T1/T2</b> = الأهداف. بتظهر لو كانت جوه حدود الرسم.</p>
+    <p><b>حرّك الماوس</b> على الرسم عشان تشوف السعر في أي لحظة.</p>`,
+  stats: () => `
+    <p><b>Open (الافتتاح):</b> أول سعر النهارده. <b>High / Low:</b> أعلى وأقل سعر النهارده. <b>Prev close:</b> سعر الإغلاق امبارح.</p>
+    <p><b>Volume (الحجم):</b> عدد الأسهم اللي اتداولت النهارده. <b>Value (القيمة):</b> إجمالي الفلوس بالجنيه. <b>Trades:</b> عدد عمليات البيع والشراء.</p>
+    <p><b>Bid:</b> أعلى سعر في حد مستعد <b>يشتري</b> بيه دلوقتي (لو عايز تبيع فوراً هتبيع بيه تقريباً). <b>Ask:</b> أقل سعر في حد مستعد <b>يبيع</b> بيه دلوقتي (لو عايز تشتري فوراً هتشتري بيه تقريباً).</p>
+    <p><b>P/E (مكرر الربحية):</b> سعر السهم ÷ ربح السهم في السنة. بشكل عام رقم أقل = السهم أرخص مقارنةً بأرباح الشركة.</p>
+    <p><b>Div. yield (عائد التوزيعات):</b> نسبة الأرباح النقدية اللي الشركة بتوزعها في السنة من سعر السهم.</p>
+    <p><b>Mkt cap (القيمة السوقية):</b> قيمة الشركة كلها في البورصة = السعر × عدد الأسهم.</p>
+    <p><b>52-week range:</b> أقل وأعلى سعر في آخر سنة، والنقطة الزرقا مكان السعر الحالي بينهم.</p>`,
+  book: (buyPct) => `
+    <p><b>دفتر الأوامر:</b> الناس اللي <b>مستنية</b> تشتري أو تبيع ولسه ما اتنفذش. على الشمال (أخضر) المشترين <b>Bid</b>، وعلى اليمين (أحمر) البائعين <b>Ask</b>، وكل صف فيه السعر اللي عايزينه.</p>
+    <p><b>Qty:</b> عدد الأسهم المستنية عند السعر ده. <b>Orders:</b> عدد الأوامر (كام شخص تقريباً). العمود الملون الكبير = كمية كبيرة، ودي ممكن "توقف" السعر عندها.</p>
+    <p><b>Buyers / Sellers:</b> مقارنة كمية الشراء بكمية البيع المستنية. دلوقتي المشترين <bdi>${fmt(buyPct, 0)}%</bdi>: ${buyPct >= 60 ? 'في ضغط شراء أكتر، وده ممكن يساعد السعر يطلع.' : buyPct <= 40 ? 'في ضغط بيع أكتر، وده ممكن يخلي السعر ينزل.' : 'الكفتين قريبين من بعض.'} (مؤشر بسيط ويتغير بسرعة، مش مضمون.)</p>
+    <p><b>Spread (الفرق):</b> الفرق بين أعلى سعر شراء وأقل سعر بيع. فرق صغير = السهم سهل تشتريه وتبيعه بسرعة.</p>
+    <p><b>Market:</b> أمر بسعر السوق، يعني صاحبه عايز يتنفذ بأي سعر متاح.</p>`,
+  trades: () => `
+    <p><b>آخر الصفقات:</b> عمليات بيع وشراء <b>اتنفذت فعلاً</b>: الوقت، السعر، عدد الأسهم، والقيمة بالجنيه.</p>
+    <p><b>أخضر:</b> الصفقة اتنفذت بسعر أعلى من اللي قبلها (السعر بيطلع). <b>أحمر:</b> بسعر أقل (السعر بينزل).</p>
+    <p><b>لو شفت صفقات كبيرة كتير ورا بعض</b> بنفس اللون، ده ممكن يعني إن في حد كبير بيشتري (أخضر) أو بيبيع (أحمر) بكمية كبيرة.</p>`,
+};
+$('side').addEventListener('click', (e) => {
+  const k = e.target.closest('[data-help]')?.dataset.help;
+  if (!k) return;
+  helpOpen.has(k) ? helpOpen.delete(k) : helpOpen.add(k);
+  renderControls(); renderPlan(); renderStats(); renderPane(); renderPos();
+});
+
+function renderControls() {
+  $('ranges').innerHTML = RANGES.map((r) => `<button data-range="${r}" class="${r === sideRange ? 'on' : ''}">${r}</button>`).join('');
+  $('chart-help').innerHTML = `<div style="display:flex;justify-content:flex-end;margin-top:-30px;pointer-events:none"><span style="pointer-events:auto">${helpBtn('chart')}</span></div>${helpBox('chart')}`;
+  const nT = book?.trades?.length;
+  $('tabs').innerHTML = `<button data-tab="book" class="${sideTab === 'book' ? 'on' : ''}">Order book</button><button data-tab="trades" class="${sideTab === 'trades' ? 'on' : ''}">Trades${nT ? ` (${nT})` : ''}</button>`;
+}
+$('ranges').onclick = (e) => { const r = e.target.closest('[data-range]')?.dataset.range; if (r && r !== sideRange) { sideRange = r; chartData = null; renderControls(); $('chart').innerHTML = '<p class="muted">Loading…</p>'; loadChart(); } };
+$('tabs').onclick = (e) => { const t = e.target.closest('[data-tab]')?.dataset.tab; if (t) { sideTab = t; renderControls(); renderPane(); } };
+
+function renderSideHead() {
+  const r = last?.rows.find((x) => x.sym === sideSym), q = book?.quote;
+  $('side-name').textContent = q ? [q.name, q.sector].filter(Boolean).join(' · ') : '';
+  const price = q?.last ?? r?.price, pct = q?.changePercent ?? r?.change, abs = q?.change;
+  if (price == null) { $('side-sub').innerHTML = ''; return; }
+  const cls = (pct ?? 0) >= 0 ? 'up' : 'down', sign = (pct ?? 0) >= 0 ? '+' : '';
+  $('side-sub').innerHTML = `<span class="big">${fmt(price)}</span><span class="chg ${cls}">${abs != null ? sign + fmt(abs) + ' ' : ''}(${sign}${fmt(pct)}%)</span>
+    ${r ? `<span class="pill ${r.now.side}" style="margin-left:8px" title="${esc(r.now.why)}">${r.now.side}</span>` : ''}`;
+  renderPlan(); renderPos();
+}
+
+// ---- Trade plan: buy zone, stop-loss, targets (levels from recent prices, not predictions) ----
+function planAlerts(pl) {
+  const out = [];
+  if (pl.buyHi != null) out.push({ side: 'BUY', type: 'price_below', value: pl.buyHi, note: 'Buy zone (plan)' });
+  out.push({ side: 'SELL', type: 'price_below', value: pl.stop, note: 'Stop-loss (plan)' });
+  if (pl.t1 != null) out.push({ side: 'SELL', type: 'price_above', value: pl.t1, note: 'Target 1 (plan)' });
+  return out;
+}
+function renderPlan() {
+  const r = last?.rows.find((x) => x.sym === sideSym), pl = r?.plan;
+  if (!pl) { $('plan').innerHTML = '<p class="muted" style="margin:0">Not enough price history for a plan.</p>'; return; }
+  const pct = (v) => `${v >= r.price ? '+' : ''}${fmt(((v - r.price) / r.price) * 100, 1)}%`;
+  const tile = (cls, k, v, d) => `<div class="lvl ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
+  const avg = last.avgCost?.[sideSym];
+  let msg, rrCls = 'ok';
+  if (pl.buyLo == null) { msg = 'No buy zone: the price is at fresh lows with no support below. Wait until it stops making new lows.'; rrCls = 'bad'; }
+  else {
+    const where = pl.inZone ? '<b>The price is in the buy zone now.</b> ' : `Wait for the price to come down to <b>${fmt(pl.buyLo)}–${fmt(pl.buyHi)}</b>. `;
+    if (pl.rr == null) msg = where + 'No clear target above.';
+    else if (pl.rr >= 2) { msg = where + 'Good reward compared to the risk.'; rrCls = 'good'; }
+    else if (pl.rr >= 1) msg = where + 'Reward is only moderately bigger than the risk.';
+    else { msg = where + 'Poor setup: the possible loss is bigger than the possible gain.'; rrCls = 'bad'; }
+  }
+  if (r.now.side === 'HOLD' && r.sma50 != null && r.price < r.sma50 && pl.buyLo != null) msg += ' Trend is down, so be patient.';
+  const have = last.rules[sideSym] || [], todo = planAlerts(pl).filter((a) => !have.some((h) => h.type === a.type && h.value === a.value));
+  $('plan').innerHTML = `
+    <h2><span>Trade plan</span><span style="display:flex;align-items:center;gap:10px"><span style="text-transform:none;letter-spacing:0;font-weight:500">Typical daily move ±${fmt(pl.move)}</span>${helpBtn('plan')}</span></h2>
+    ${helpBox('plan', r, pl, avg)}
+    <div class="plan-grid">
+      ${tile('buy', 'Buy zone', pl.buyLo == null ? '—' : `${fmt(pl.buyLo)}–${fmt(pl.buyHi)}`, pl.buyLo == null ? 'no support below' : pct(pl.buyHi))}
+      ${tile('stop', 'Stop-loss', fmt(pl.stop), pct(pl.stop) + ' · sell if it falls here')}
+      ${tile('tgt', 'Target 1', pl.t1 == null ? '—' : fmt(pl.t1), pl.t1 == null ? 'no level above' : pct(pl.t1))}
+      ${tile('tgt', 'Target 2', pl.t2 == null ? '—' : fmt(pl.t2), pl.t2 == null ? '' : pct(pl.t2))}
+    </div>
+    <div class="verdict">
+      ${pl.rr == null ? '' : `<span class="rr ${rrCls}" title="Possible gain to Target 1 ÷ possible loss to stop-loss, from the middle of the buy zone">Risk/reward 1 : ${pl.rr}</span>`}
+      <span class="msg">${msg}</span>
+    </div>
+    ${avg ? `<p style="margin:10px 0 0;font-size:13px"><b>You hold this</b> at avg ${fmt(avg)} (<span class="${r.price >= avg ? 'up' : 'down'}">${r.price >= avg ? '+' : ''}${fmt(((r.price - avg) / avg) * 100, 1)}%</span> so far). Plan: sell part at <b class="num">${pl.t1 == null ? '—' : fmt(pl.t1)}</b>${avg > r.price ? `, break-even at <b>${fmt(avg)}</b>` : ''}; cut the loss if it closes below <b class="down">${fmt(pl.stop)}</b>.</p>` : ''}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px">
+      <span class="muted" style="font-size:11px">Levels from the last 20–60 days of prices. Not a prediction or financial advice.</span>
+      ${todo.length ? `<button id="plan-add" class="primary" style="white-space:nowrap">${icon('bell')}Alert me at these prices</button>` : `<span class="up" style="font-size:12px;white-space:nowrap;display:inline-flex;gap:4px">${icon('check')}Alerts set</span>`}
+    </div>`;
+  const btn = $('plan-add');
+  if (btn) btn.onclick = async () => {
+    btn.disabled = true;
+    for (const a of todo) await api('/api/rules', { sym: sideSym, add: a }).catch(() => {});
+  };
+}
+
+async function getJson(url) {
+  const res = await fetch(url), j = await res.json();
+  if (!res.ok) throw new Error(j.error);
+  return j;
+}
+async function loadBook() {
+  if (!sideSym || bookBusy) return;
+  const sym = sideSym; bookBusy = true;
+  try {
+    const j = await getJson('/api/book?sym=' + encodeURIComponent(sym));
+    if (sym !== sideSym) return;
+    book = j; renderSideHead(); renderControls(); renderStats(); renderPane();
+  } catch (e) { if (sym === sideSym && !book) $('pane').innerHTML = `<p class="err">${esc(e.message)}</p>`; } finally { bookBusy = false; }
+}
+async function loadChart() {
+  if (!sideSym || chartBusy) return;
+  const sym = sideSym, range = sideRange; chartBusy = true;
+  try {
+    const j = await getJson(`/api/chart?sym=${encodeURIComponent(sym)}&range=${range}`);
+    if (sym !== sideSym || range !== sideRange) return;
+    chartData = j; if (!hovering) drawChart();
+  } catch (e) { if (sym === sideSym) $('chart').innerHTML = `<p class="err">${esc(e.message)}</p>`; } finally { chartBusy = false; }
+}
+
+// Area chart like Thndr's: price line + gradient, dashed previous close (1D) / start price, volume bars, crosshair tooltip.
+function drawChart() {
+  const el = $('chart'), d = chartData;
+  if (!d) return;
+  const pts = d.points;
+  if (pts.length < 2) { el.innerHTML = '<p class="muted">Not enough data for this range yet.</p>'; return; }
+  const W = el.clientWidth, H = el.clientHeight, padR = 46, plotW = W - padR, priceH = H - 72, volTop = H - 62, volH = 40;
+  const base = d.base ?? pts[0].c, vals = pts.map((p) => p.c);
+  let lo = Math.min(...vals, base), hi = Math.max(...vals, base);
+  const pad = (hi - lo) * 0.08 || hi * 0.01; lo -= pad; hi += pad;
+  const n = pts.length, x = (i) => (i / (n - 1)) * plotW, y = (v) => 6 + ((hi - v) / (hi - lo)) * (priceH - 6);
+  const up = pts.at(-1).c >= base, color = up ? 'var(--buy)' : 'var(--sell)';
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.c).toFixed(1)}`).join('');
+  const maxV = Math.max(1, ...pts.map((p) => p.v)), bw = Math.max(1, plotW / n - 1);
+  const vols = pts.map((p, i) => { const h = (p.v / maxV) * volH; return `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(volTop + volH - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${i && p.c < pts[i - 1].c ? 'var(--sell)' : 'var(--buy)'}" opacity=".35"/>`; }).join('');
+  const ticks = [0, 1, 2, 3].map((k) => lo + pad + ((hi - lo - 2 * pad) * k) / 3);
+  const fmtT = (t) => {
+    const o = { timeZone: 'Africa/Cairo' };
+    if (d.range === '1D') return new Date(t).toLocaleTimeString('en-GB', { ...o, hour: '2-digit', minute: '2-digit' });
+    if (d.range === '1W' || d.range === '1M') return new Date(t).toLocaleDateString('en-GB', { ...o, day: 'numeric', month: 'short' });
+    return new Date(t).toLocaleDateString('en-GB', { ...o, month: 'short', year: '2-digit' });
+  };
+  const xl = [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1];
+  el.innerHTML = `<svg style="color:${color}" viewBox="0 0 ${W} ${H}">
+    <defs><linearGradient id="cg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".28"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+    ${ticks.map((v) => `<line x1="0" x2="${plotW}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${plotW + 6}" y="${y(v) + 3}">${fmt(v)}</text>`).join('')}
+    <line x1="0" x2="${plotW}" y1="${y(base)}" y2="${y(base)}" stroke="var(--muted)" stroke-dasharray="3 4"/>
+    <text x="${plotW + 6}" y="${y(base) + 3}" style="fill:var(--text);font-weight:600">${fmt(base)}</text>
+    ${planLines(y, lo, hi, plotW)}
+    <path d="${line}L${plotW},${priceH}L0,${priceH}Z" fill="url(#cg)"/>
+    <path d="${line}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${x(n - 1)}" cy="${y(pts.at(-1).c)}" r="3.5" fill="currentColor"/>
+    ${vols}
+    ${xl.map((i, k) => `<text x="${x(i)}" y="${H - 4}" text-anchor="${k === 0 ? 'start' : k === 3 ? 'end' : 'middle'}">${fmtT(pts[i].t)}</text>`).join('')}
+    <g id="cross" style="display:none"><line id="cx" y1="0" y2="${volTop + volH}" stroke="var(--muted)" stroke-dasharray="2 3"/><circle id="cd" r="5" fill="currentColor" stroke="var(--panel)" stroke-width="2"/></g>
+  </svg><div class="tip" id="tip"></div>`;
+  const cross = el.querySelector('#cross'), tip = el.querySelector('#tip');
+  el.onmousemove = (e) => {
+    const px = e.clientX - el.getBoundingClientRect().left;
+    const i = Math.max(0, Math.min(n - 1, Math.round((px / plotW) * (n - 1)))), p = pts[i], ch = ((p.c - base) / base) * 100;
+    hovering = true; cross.style.display = ''; tip.style.display = 'block';
+    el.querySelector('#cx').setAttribute('x1', x(i)); el.querySelector('#cx').setAttribute('x2', x(i));
+    el.querySelector('#cd').setAttribute('cx', x(i)); el.querySelector('#cd').setAttribute('cy', y(p.c));
+    tip.style.left = Math.max(60, Math.min(plotW - 60, x(i))) + 'px';
+    const when = new Date(p.t).toLocaleString('en-GB', { timeZone: 'Africa/Cairo', day: 'numeric', month: 'short', year: d.range === '1Y' || d.range === '5Y' ? 'numeric' : undefined, hour: ['1D', '1W', '1M'].includes(d.range) ? '2-digit' : undefined, minute: ['1D', '1W', '1M'].includes(d.range) ? '2-digit' : undefined });
+    tip.innerHTML = `<b>${fmt(p.c)}</b> <span style="opacity:.8">${ch >= 0 ? '+' : ''}${fmt(ch)}%</span><br><span style="opacity:.7">${when} · Vol ${compact(p.v)}</span>`;
+  };
+  el.onmouseleave = () => { hovering = false; cross.style.display = 'none'; tip.style.display = 'none'; };
+}
+
+// Plan levels on the chart (only those inside the visible price range, so the chart isn't squashed).
+function planLines(y, lo, hi, w) {
+  const pl = last?.rows.find((x) => x.sym === sideSym)?.plan;
+  if (!pl) return '';
+  const inR = (v) => v != null && v >= lo && v <= hi;
+  const ln = (v, color, label) => inR(v) ? `<line x1="0" x2="${w}" y1="${y(v)}" y2="${y(v)}" stroke="${color}" stroke-width="1" stroke-dasharray="6 4" opacity=".8"/><text x="4" y="${y(v) - 3}" style="fill:${color};font-weight:600">${label} ${fmt(v)}</text>` : '';
+  let out = '';
+  if (pl.buyLo != null && (inR(pl.buyLo) || inR(pl.buyHi))) {
+    const top = y(Math.min(hi, pl.buyHi)), bot = y(Math.max(lo, pl.buyLo));
+    out += `<rect x="0" y="${top}" width="${w}" height="${Math.max(2, bot - top)}" fill="var(--buy)" opacity=".10"/>` + ln(pl.buyHi, 'var(--buy)', 'Buy');
+  }
+  return out + ln(pl.stop, 'var(--sell)', 'Stop') + ln(pl.t1, 'var(--accent)', 'T1') + ln(pl.t2, 'var(--accent)', 'T2');
+}
+
+function renderStats() {
+  const q = book?.quote;
+  $('stats-head').innerHTML = `<h2><span>Today</span>${helpBtn('stats')}</h2>${helpBox('stats')}`;
+  if (!q) { $('stats').innerHTML = '<p class="muted">No quote data.</p>'; return; }
+  const st = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  const lo = q.week52Low, hi = q.week52High, pos = lo != null && hi > lo ? ((q.last - lo) / (hi - lo)) * 100 : null;
+  $('stats').innerHTML = [
+    st('Open', fmt(q.open)), st('High', fmt(q.high)), st('Low', fmt(q.low)), st('Prev close', fmt(q.previousClose)),
+    st('Volume', compact(q.volume)), st('Value', compact(q.value)), st('Trades', qty(q.trades)), st('P/E', fmt(q.peRatio, 1)),
+    st('Bid', `<span class="up">${fmt(q.bid)}</span>`), st('Ask', `<span class="down">${fmt(q.ask)}</span>`),
+    st('Div. yield', q.dividendYieldPercent == null ? '—' : fmt(q.dividendYieldPercent, 1) + '%'), st('Mkt cap', compact(q.marketCap)),
+  ].join('') + (pos == null ? '' : `<div class="range"><div class="k stat"><span class="k">52-week range</span></div>
+      <div class="track"><div class="dot" style="left:${Math.max(0, Math.min(100, pos))}%" title="${fmt(q.last)}"></div></div>
+      <div class="ends"><span>${fmt(lo)}</span><span>${fmt(hi)}</span></div></div>`);
+}
+
+function renderPane() {
+  if (!book) return;
+  const { bids = [], asks = [], trades = [] } = book;
+  if (sideTab === 'trades') {
+    // Thndr gives no buy/sell side per trade, so colour by tick: up from the previous trade = green, down = red.
+    const rows = trades.map((t, i) => {
+      const prev = trades.slice(i + 1).find((p) => p.price !== t.price);
+      const cls = !prev ? '' : t.price > prev.price ? 'up' : 'down';
+      return `<tr><td class="muted">${cairoTime(t.time)}</td><td class="${cls}" style="font-weight:600">${fmt(t.price)}</td><td style="text-align:right">${qty(t.quantity)}</td><td class="muted" style="text-align:right">${qty(Math.round(t.price * t.quantity))}</td></tr>`;
+    }).join('');
+    $('pane').innerHTML = `<div class="sechead" style="justify-content:flex-end">${helpBtn('trades')}</div>${helpBox('trades')}<table class="tape"><thead><tr><th>Time (Cairo)</th><th>Price</th><th style="text-align:right">Qty</th><th style="text-align:right">Value (EGP)</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" class="muted">No trades yet today</td></tr>'}</tbody></table>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Green = higher than the previous trade, red = lower.</p>`;
+    return;
+  }
+  const max = Math.max(1, ...bids.map((b) => b.quantity), ...asks.map((a) => a.quantity));
+  const bidQ = bids.reduce((a, b) => a + b.quantity, 0), askQ = asks.reduce((a, b) => a + b.quantity, 0);
+  const buyPct = bidQ + askQ ? (bidQ / (bidQ + askQ)) * 100 : 50;
+  // Price 0 = a market order (buy/sell at any price): shown as "Market", left out of the spread.
+  const bestBid = bids.find((b) => b.price > 0), bestAsk = asks.find((a) => a.price > 0);
+  const spread = bestBid && bestAsk ? bestAsk.price - bestBid.price : null;
+  const px = (p) => (p > 0 ? fmt(p) : '<span title="Market order: at any price">Market</span>');
+  const rows = Array.from({ length: Math.max(bids.length, asks.length) }, (_, i) => {
+    const b = bids[i], a = asks[i];
+    return `<tr>
+      <td class="o">${b ? b.orders : ''}</td>
+      <td class="q l" style="--w:${b ? (b.quantity / max) * 100 : 0}%">${b ? qty(b.quantity) : ''}</td>
+      <td class="bid">${b ? px(b.price) : ''}</td>
+      <td class="ask">${a ? px(a.price) : ''}</td>
+      <td class="q r" style="--w:${a ? (a.quantity / max) * 100 : 0}%;text-align:right">${a ? qty(a.quantity) : ''}</td>
+      <td class="o" style="text-align:right">${a ? a.orders : ''}</td></tr>`;
+  }).join('');
+  $('pane').innerHTML = `<div class="sechead" style="justify-content:flex-end;margin-bottom:6px">${helpBtn('book')}</div>${helpBox('book', buyPct)}
+    <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600"><span class="up">Buyers ${fmt(buyPct, 0)}%</span><span class="muted">${spread == null ? '' : 'Spread ' + fmt(spread)}</span><span class="down">Sellers ${fmt(100 - buyPct, 0)}%</span></div>
+    <div class="press" title="Shares waiting to buy vs sell in the top ${bids.length} levels"><div class="b" style="width:${buyPct}%"></div><div class="a" style="flex:1"></div></div>
+    <div class="muted" style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px"><span>${qty(bidQ)} shares</span><span>${qty(askQ)} shares</span></div>
+    <table class="book"><thead><tr><th>Orders</th><th>Bid qty</th><th>Bid</th><th>Ask</th><th style="text-align:right">Ask qty</th><th style="text-align:right">Orders</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" class="muted">No orders</td></tr>'}</tbody></table>
+    <p class="muted" style="font-size:12px;margin:10px 0 0">Updated ${cairoTime(book.at)} Cairo · every 5 s while the market is open</p>`;
+}
+
+// ---- "My buys" sidebar tab (held stocks): your average, every buy, P/L, and a rule-based suggestion ----
+// Display only: this app never places orders. Average/shares/cost come from Thndr's positions (average includes fees).
+let sideView = 'market', fillsData = null, fillsBusy = false;
+const money = (v) => (v == null ? '—' : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const posDay = (t) => new Date(t).toLocaleDateString('en-GB', { timeZone: 'Africa/Cairo', day: 'numeric', month: 'short', year: 'numeric' });
+const sPct = (v) => `${v >= 0 ? '+' : ''}${fmt(v, 1)}%`;
+
+function renderSideTabs() {
+  const held = !!(last?.positions?.[sideSym] || last?.avgCost?.[sideSym]);
+  if (!held) sideView = 'market';
+  $('side-tabs').innerHTML = held ? `<button data-view="market" class="${sideView === 'market' ? 'on' : ''}">${icon('activity')}Market</button><button data-view="pos" class="${sideView === 'pos' ? 'on' : ''}">${icon('briefcase')}My buys</button>` : '';
+  $('side-main').hidden = sideView !== 'market';
+  $('side-pos').hidden = sideView !== 'pos';
+  if (sideView === 'pos') { renderPos(); if (!fillsData) loadFills(); }
+  else if (chartData && !hovering) drawChart(); // the chart sizes itself from its box, so redraw once it is visible again
+}
+$('side-tabs').onclick = (e) => { const v = e.target.closest('[data-view]')?.dataset.view; if (v && v !== sideView) { sideView = v; $('side').scrollTop = 0; renderSideTabs(); } };
+
+async function loadFills() {
+  if (!sideSym || fillsBusy) return;
+  const sym = sideSym; fillsBusy = true;
+  try { const j = await getJson('/api/fills?sym=' + encodeURIComponent(sym)); if (sym === sideSym) fillsData = j; }
+  catch (e) { if (sym === sideSym) fillsData = { error: e.message }; }
+  finally { fillsBusy = false; renderPos(); }
+}
+
+/**
+ * Rule-based suggestion for a stock you hold (plain rules on data the app already has; not financial advice):
+ *  1. ≥ +10% on your average AND (RSI > 70 or within one typical daily move of Target 1 / at the 20-day high)  -> sell part (take profit)
+ *  2. in profit, above the 50-day avg, price in the buy zone, RSI < 70                                          -> buy more
+ *  3. in profit otherwise                                                                                       -> hold (stop = plan stop-loss)
+ *  4. at a loss, no support below (fresh lows): ≤ -15% and below the 50-day avg -> reduce; otherwise            -> wait, don't average yet
+ *  5. at a loss, price in the support (buy) zone or RSI < 30                                                    -> average down now
+ *  6. at a loss, support exists below the price                                                                 -> average down at the support zone
+ */
+function advise(r, avg, price) {
+  const pl = r?.plan, pct = ((price - avg) / avg) * 100, rsi = r?.rsi ?? 50, sma = r?.sma50;
+  const up = sma != null && price > sma, down = sma != null && price < sma;
+  if (!pl) return { act: 'HOLD', key: 'hold', title: 'Hold', why: `${sPct(pct)} on your average; not enough price history for buy/sell levels.` };
+  const nearTop = (pl.t1 != null && pl.t1 - price <= pl.move) || (r.resistance != null && price >= r.resistance);
+  if (pct >= 10 && (rsi > 70 || nearTop))
+    return { act: 'SELL', key: 'take', title: 'Sell part (take profit)', why: `${sPct(pct)} on your average and ${rsi > 70 ? `overbought (RSI ${fmt(rsi, 0)})` : `near resistance ${fmt(pl.t1 ?? r.resistance)}`}.` };
+  if (pct >= 0) {
+    if (up && pl.inZone && rsi < 70) return { act: 'BUY', key: 'buy', title: 'Buy more', why: `${sPct(pct)} on your average, uptrend (above 50-day avg ${fmt(sma)}) and the price is in the buy zone ${fmt(pl.buyLo)}–${fmt(pl.buyHi)}.` };
+    return { act: 'HOLD', key: 'hold', title: 'Hold', why: up
+      ? `${sPct(pct)} on your average and in an uptrend. ${pl.t1 != null ? `Next target ${fmt(pl.t1)}; ` : ''}sell if it closes below ${fmt(pl.stop)}.`
+      : `${sPct(pct)} on your average but below the 50-day avg${sma != null ? ` ${fmt(sma)}` : ''}: don't add; sell if it closes below ${fmt(pl.stop)}.` };
+  }
+  if (pl.buyLo == null) {
+    if (pct <= -15 && down) return { act: 'SELL', key: 'cut', title: 'Reduce (cut the loss)', why: `${sPct(pct)} on your average, below the 50-day avg and at fresh lows with no support: averaging down here is catching a falling knife.` };
+    return { act: 'WAIT', key: 'wait', title: "Wait, don't average down yet", why: `${sPct(pct)} on your average and at fresh lows with no support below. Wait until it stops making new lows.` };
+  }
+  if (pl.inZone || rsi < 30) return { act: 'AVG', key: 'avgnow', title: 'Average down now', why: `${sPct(pct)} on your average and the price ${pl.inZone ? `is in the support zone ${fmt(pl.buyLo)}–${fmt(pl.buyHi)}` : `is oversold (RSI ${fmt(rsi, 0)})`}${down ? '; the trend is still down, so buy in small steps' : ''}.` };
+  return { act: 'AVG', key: 'avgat', title: `Average down at ${fmt(pl.buyLo)}–${fmt(pl.buyHi)}`, why: `${sPct(pct)} on your average; wait for the support zone (${sPct(((pl.buyHi - price) / price) * 100)} from now) instead of buying at ${fmt(price)}.` };
+}
+
+const REC_AR = { take: 'بيع جزء وخد مكسبك', buy: 'زوّد (اشتري تاني)', hold: 'احتفظ بالسهم واستنى', cut: 'قلّل الكمية (اقطع الخسارة)', wait: 'ما تعملش متوسط دلوقتي، استنى', avgnow: 'اعمل متوسط دلوقتي', avgat: 'اعمل متوسط عند منطقة الدعم' };
+HELP.pos = (rec, avg, price, pl, worth, ex) => `
+  <p><b>متوسط سعر الشراء ${n(avg)}:</b> ده متوسط السعر اللي اشتريت بيه كل أسهمك (محسوب بالكمية، وThndr بيحسب فيه العمولة). لازم السهم يرجع للسعر ده عشان تبقى مش خسران.</p>
+  <p><b>الاقتراح: ${REC_AR[rec.key]}.</b> ${price < avg ? `إنت خسران دلوقتي <bdi>${sPct(((price - avg) / avg) * 100)}</bdi>.` : `إنت كسبان دلوقتي <bdi>${sPct(((price - avg) / avg) * 100)}</bdi>.`}</p>
+  ${price >= avg ? '<p><b>تعمل متوسط؟</b> لأ، إنت فوق متوسطك، فأي شراء دلوقتي هيرفع المتوسط مش هينزله.</p>'
+    : worth != null ? `<p><b>تعمل متوسط على كام؟</b> أنسب سعر حوالين ${n(pl.buyLo)} – ${n(worth)} (منطقة الدعم: السهم وقف عندها عن النزول قبل كده). لو اشتريت <bdi>${qty(ex.n)}</bdi> سهم بسعر ${n(worth)} متوسطك ينزل من ${n(avg)} لـ ${n(ex.avgAt)}.</p>`
+    : '<p><b>تعمل متوسط على كام؟</b> مفيش سعر مناسب دلوقتي: السهم بيعمل قيعان جديدة ومفيش دعم تحته. استنى لحد ما يبطل ينزل.</p>'}
+  <p class="note">ده اقتراح محسوب بقواعد بسيطة من الأسعار، مش نصيحة مالية. البرنامج ما بيعملش أي أوامر شراء أو بيع.</p>`;
+
+function renderPos() {
+  if (sideView !== 'pos' || !sideSym) return;
+  const el = $('side-pos'), pos = last?.positions?.[sideSym], r = last?.rows.find((x) => x.sym === sideSym), f = fillsData;
+  const price = book?.quote?.last ?? r?.price;
+  // Thndr's average first; the orders' average only when they explain the whole holding.
+  const avg = pos?.avg ?? last?.avgCost?.[sideSym] ?? (f?.computed && f.computed.qty === pos?.qty ? f.computed.avg : null);
+  if (!pos || !avg || price == null) { el.innerHTML = `<div class="sec"><p class="muted" style="margin:0">${pos ? 'Loading…' : "You don't hold this stock on Thndr."}</p></div>`; return; }
+  const Q = pos.qty, cost = pos.cost ?? avg * Q, value = price * Q, pnl = value - cost, pnlPct = (pnl / cost) * 100;
+  const cls = pnl >= 0 ? 'up' : 'down', sg = pnl >= 0 ? '+' : '';
+  const st = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  const pl = r?.plan, rec = advise(r, avg, price);
+  const worth = pl?.buyHi != null && pl.buyHi < avg ? pl.buyHi : null; // averaging is worth it at the support zone, below your average
+  const showZone = worth != null && worth < price - 0.005;
+  const newAvg = (N, P) => (avg * Q + N * P) / (Q + N);
+  const opts = [0.25, 0.5, 1].map((k) => [k, Math.max(1, Math.round(Q * k))]);
+  const T = avg * 0.9, needN = price < T ? Math.ceil((Q * (avg - T)) / (T - price)) : null;
+  const mid = opts[1][1], ex = { n: mid, avgAt: newAvg(mid, worth ?? price) };
+  const cell = (v) => `<b>${fmt(v)}</b> <span class="muted">(${v >= avg ? '+' : ''}${fmt(v - avg)})</span>`;
+  const worthLine = price >= avg ? "You're above your average, so buying more raises it (this is not averaging down)."
+    : worth != null ? `Averaging down is worth it at <b>${fmt(pl.buyLo)}–${fmt(worth)}</b> (support zone, ${sPct(((worth - avg) / avg) * 100)} vs your average${pl.inZone ? '; the price is there now' : ''}).`
+    : 'No good averaging price yet: the stock is at fresh lows with no support below.';
+  const icons = { BUY: 'up', SELL: 'down', AVG: 'plus', HOLD: 'activity', WAIT: 'activity' };
+
+  let orders;
+  if (!f) orders = '<p class="muted" style="margin:0">Loading your orders from Thndr…</p>';
+  else if (f.error || !f.fills) orders = `<p class="err">${esc(f.error || f.historyError || 'No order history from Thndr')}</p>`;
+  else {
+    const buys = f.fills.filter((x) => x.side === 'BUY'), bq = buys.reduce((a, x) => a + x.qty, 0), bc = buys.reduce((a, x) => a + x.qty * x.price, 0);
+    const rows = [...f.fills].reverse().map((x) => `<tr><td class="muted">${posDay(x.time)}</td><td><span class="pill ${x.side === 'BUY' ? 'BUY' : 'SELL'}">${x.side === 'BUY' ? 'Buy' : 'Sell'}</span></td><td class="r">${qty(x.qty)}</td><td class="r">${fmt(x.price)}</td><td class="r">${money(x.qty * x.price)}</td></tr>`).join('');
+    const c = f.computed, note = c.qty !== Q
+      ? `Your orders add up to <b>${qty(c.qty)}</b> shares but Thndr shows <b>${qty(Q)}</b>. The difference most likely came from bonus shares, a split or a transfer (those aren't orders), so the average above is Thndr's.`
+      : `From these orders: average <b>${fmt(c.avg, 3)}</b> before fees${pos.src === 'thndr' ? `; Thndr's <b>${fmt(avg, 3)}</b> includes fees` : ''}.`;
+    orders = `<table class="tape"><thead><tr><th>Date</th><th></th><th class="r">Qty</th><th class="r">Price</th><th class="r">Total (EGP)</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="5" class="muted">No filled orders found</td></tr>'}</tbody>
+      ${buys.length ? `<tfoot><tr><td colspan="2"><b>All buys</b></td><td class="r"><b>${qty(bq)}</b></td><td class="r"><b>${fmt(bc / bq)}</b></td><td class="r"><b>${money(bc)}</b></td></tr></tfoot>` : ''}</table>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">${note} Limit orders show their limit price.</p>`;
+  }
+
+  el.innerHTML = `
+    <div class="sec">
+      <h2><span>My position</span>${helpBtn('pos')}</h2>
+      ${helpBox('pos', rec, avg, price, pl, worth, ex)}
+      <div class="stats">
+        ${st('Shares', qty(Q))}${st('Average', `${fmt(avg)} EGP`)}${st('Total cost', money(cost))}${st('Current price', fmt(price))}
+        ${st('Market value', money(value))}${st('P/L (EGP)', `<span class="${cls}">${sg}${money(pnl)}</span>`)}${st('P/L %', `<span class="${cls}">${sg}${fmt(pnlPct)}%</span>`)}${st('Average from', pos.src === 'orders' ? 'Your orders' : 'Thndr')}
+      </div>
+    </div>
+    <div class="sec">
+      <h2><span>Suggestion</span><span style="text-transform:none;letter-spacing:0;font-weight:500">Rule-based, not financial advice</span></h2>
+      <div class="rec ${rec.act}">${icon(icons[rec.act])}<div><div class="t">${esc(rec.title)}</div><div class="w">${esc(rec.why)}</div></div></div>
+      <p style="font-size:13px;margin:10px 0 0">${worthLine}</p>
+    </div>
+    <div class="sec">
+      <h2><span>${price < avg ? 'Average down: if you buy more' : 'If you buy more'}</span></h2>
+      <table class="tape"><thead><tr><th>Buy more</th><th class="r">Cost at ${fmt(price)}</th><th class="r">New avg at ${fmt(price)}</th>${showZone ? `<th class="r">New avg at ${fmt(worth)}</th>` : ''}</tr></thead>
+        <tbody>${opts.map(([k, N]) => `<tr><td>${qty(N)} shares <span class="muted">(+${k * 100}%)</span></td><td class="r">${money(N * price)}</td><td class="r">${cell(newAvg(N, price))}</td>${showZone ? `<td class="r">${cell(newAvg(N, worth))}</td>` : ''}</tr>`).join('')}</tbody></table>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">${price < avg ? `Break-even now needs ${sPct(((avg - price) / price) * 100)}; after buying ${qty(mid)} at ${fmt(price)} it needs ${sPct(((newAvg(mid, price) - price) / price) * 100)}. ` : ''}${needN ? `To cut your average 10% to ${fmt(T)} you'd need ${qty(needN)} more shares at ${fmt(price)} (${money(needN * price)} EGP). ` : ''}New average = (your cost + shares × price) ÷ all shares; fees excluded. Display only: nothing is bought or sold.</p>
+    </div>
+    <div class="sec">
+      <h2><span>Your orders</span>${f?.fills ? `<span style="text-transform:none;letter-spacing:0;font-weight:500">${f.fills.length} filled</span>` : ''}</h2>
+      ${orders}
+    </div>`;
+}
+
+load();
+// Every 5 s: live prices (server only fetches while the market is open). Skip a tick if the last one is still busy.
+let ticking = false;
+setInterval(async () => {
+  if (ticking) return; ticking = true;
+  try { await api('/api/live'); } catch {} finally { ticking = false; }
+  if (sideSym) { renderSideHead(); if (last?.market) { loadBook(); if (sideRange === '1D') loadChart(); } }
+}, 5000);
+</script>
+</body>
+</html>
