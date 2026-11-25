@@ -41,6 +41,9 @@
   body.side-open #watch :is(th, td):is(:nth-child(6), :nth-child(9)) { display: none; }
   body.side-open #watch td:last-child .pill { font-size: 0; gap: 0; padding: 4px 6px; } /* sidebar open: briefcase icon only */
   #rows tr[data-sym] { cursor: pointer; }
+  #rows tr.sep td { text-align: left !important; padding: 14px 8px 6px; border-bottom: 2px solid var(--line); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  #rows tr.sep td span + span { margin-left: 8px; font-weight: 600; background: var(--zone); border-radius: 99px; padding: 1px 8px; }
+  #rows tr.sep:not(:first-child) td { padding-top: 26px; }
   /* All table text centered (watchlist + alerts log); flex cells centered too */
   #watch th, #watch td, #logtable th, #logtable td { text-align: center; }
   #watch .symcell, #watch .rsi { justify-content: center; }
@@ -275,7 +278,7 @@
       <span class="spacer"></span>
       <div class="seg" id="filters"></div>
       <select id="sortby" title="Sort the watchlist">
-        <option value="">Sort: default</option><option value="pnl">Sort: my P&amp;L %</option><option value="change">Sort: today's change</option>
+        <option value="">Sort: newest first</option><option value="pnl">Sort: my P&amp;L %</option><option value="change">Sort: today's change</option>
         <option value="rsi">Sort: RSI (low first)</option><option value="signal">Sort: signal (BUY first)</option><option value="vol">Sort: volume vs normal</option><option value="sym">Sort: A–Z</option>
       </select>
     </div>
@@ -506,7 +509,7 @@ function render(s) {
 
   let syms = [...new Set([...s.rows.map((r) => r.sym), ...Object.keys(s.errors)])];
   syms = sortFilter(s, syms);
-  $('rows').innerHTML = syms.map((sym) => {
+  const rowHtml = syms.map((sym) => {
     const r = s.rows.find((x) => x.sym === sym);
     const rm = s.held.includes(sym)
       ? `<td><span class="pill HOLD" title="You own this on Thndr">${icon('briefcase')}In portfolio</span></td>`
@@ -533,7 +536,13 @@ function render(s) {
       <td>${(() => { const la = (s.log || []).find((e) => e.sym === sym); return la ? `<span class="pill ${pillCls(la.side)}" title="${esc(la.why)}">${esc(pillTxt(la.side))}</span><div class="muted" style="font-size:11px">${ago(la.time)}</div>` : '<span class="muted">—</span>'; })()}</td>
       <td><button class="bell${(s.rules[sym] || []).length ? ' on' : ''}" data-rules="${esc(sym)}" title="Buy/sell alerts for ${esc(sym)}">${icon('bell')}${(s.rules[sym] || []).length ? `<span class="count">${s.rules[sym].length}</span>` : ''}</button></td>
       ${rm}</tr>`;
-  }).join('') || `<tr><td colspan="11" class="muted">${s.running || !s.lastRun ? 'Loading your stocks…' : 'Add a symbol to start.'}</td></tr>`;
+  });
+  // Section lines: "My stocks" on top, then "Watching" (stocks you don't own).
+  const nMine = syms.filter((x) => posOf(s, x)).length;
+  const sep = (label, n) => `<tr class="sep"><td colspan="11"><span>${label}</span><span class="muted">${n}</span></td></tr>`;
+  if (nMine && nMine < syms.length) rowHtml.splice(nMine, 0, sep('Watching', syms.length - nMine));
+  if (nMine) rowHtml.unshift(sep('My stocks', nMine));
+  $('rows').innerHTML = rowHtml.join('') || `<tr><td colspan="11" class="muted">${s.running || !s.lastRun ? 'Loading your stocks…' : 'Add a symbol to start.'}</td></tr>`;
 
   $('log').innerHTML = s.log.map((e) => `<tr>
       <td class="muted">${esc(new Date(e.time).toLocaleString())}</td>
@@ -1164,8 +1173,18 @@ function sortFilter(s, syms) {
     pnl: (x) => -pnlPct(x), change: (x) => -(row(x)?.change ?? -Infinity), rsi: (x) => row(x)?.rsi ?? Infinity,
     signal: (x) => (row(x) ? { BUY: 0, WAIT: 1, HOLD: 2, SELL: 3 }[signalOf(s, row(x)).cls] : 4), vol: (x) => -(row(x)?.volRatio ?? 0), sym: (x) => x,
   }[sortBy];
-  if (key) out = [...out].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
-  return out;
+  // Always: your stocks first. Within each group: the chosen sort, else newest first
+  // (your stocks by latest buy, the others by most recently added to the list).
+  const added = (x) => (s.order || []).indexOf(x);
+  const newest = (x) => (held(x) ? String(s.lastBuy?.[x] ?? '') : '');
+  const cmp = (a, b) => {
+    if (held(a) !== held(b)) return held(a) ? -1 : 1;
+    if (key) { const ka = key(a), kb = key(b); if (ka !== kb) return ka < kb ? -1 : 1; }
+    const na = newest(a), nb = newest(b);
+    if (na !== nb) return na > nb ? -1 : 1;
+    return added(b) - added(a);
+  };
+  return [...out].sort(cmp);
 }
 
 // ---- Net worth over time (one point per day, recorded by the app since you started it) ----

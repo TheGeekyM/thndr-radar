@@ -290,6 +290,21 @@ const backtestOf = (sym) => cached(`bt:${sym}`, 3_600_000, async () => {
   return { sym, from: bars[0]?.time, to: bars.at(-1)?.time, ...backtest(bars.map((b) => b.close)) };
 });
 
+// When you last bought each stock you own (newest-bought first in the list). From your Thndr orders, refreshed hourly.
+const lastBuyCache = {};
+async function lastBuys() {
+  state.lastBuy ??= {};
+  for (const sym of state.held) {
+    const hit = lastBuyCache[sym];
+    if (hit && Date.now() - hit.at < 3_600_000) { state.lastBuy[sym] = hit.t; continue; }
+    try {
+      const { fills: list } = await fills(sym);
+      const t = [...list].reverse().find((f) => f.side === 'BUY')?.time ?? null;
+      lastBuyCache[sym] = { at: Date.now(), t }; state.lastBuy[sym] = t;
+    } catch {}
+  }
+}
+
 let running = null;
 function run() {
   // ponytail: one run at a time; a second click waits for the same run instead of hitting Thndr twice.
@@ -321,6 +336,7 @@ function run() {
           }
         } catch {}
       }
+      await lastBuys();
       const missing = state.held.filter((t) => !config.symbols.includes(t));
       if (missing.length) { config.symbols.push(...missing); saveJson('config.json', config); }
     } catch {}
@@ -376,6 +392,7 @@ function live() {
       checkRules(state.rows[i]);
     }
     state.liveAt = new Date().toISOString();
+    adviceAlerts(day); // keep "Last alert" in step with "Signal now" (at most one alert per advice per stock per day)
   }).catch((e) => console.error('live:', e.message)).finally(() => { living = null; });
   return living;
 }
@@ -498,7 +515,7 @@ async function body(req) {
 // Advice for each stock you hold, recomputed with the live price on every request.
 const advice = () => Object.fromEntries(state.rows.filter((r) => state.positions[r.sym]).map((r) => [r.sym, advise(r, state.positions[r.sym])]));
 const snapshot = () => ({
-  ...state, advice: advice(), log, rules: config.rules, push: !!config.ntfyTopic, logos, netHistory, remote: !!config.remote?.enabled, running: !!running, market: cairo().open, telegram: !!(config.telegramToken && config.telegramChat),
+  ...state, advice: advice(), log, rules: config.rules, order: config.symbols, push: !!config.ntfyTopic, logos, netHistory, remote: !!config.remote?.enabled, running: !!running, market: cairo().open, telegram: !!(config.telegramToken && config.telegramChat),
 });
 
 const server = http.createServer(async (req, res) => {
