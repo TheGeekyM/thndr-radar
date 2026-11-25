@@ -110,6 +110,20 @@
   .banner { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: var(--sell-bg); color: var(--sell); font-weight: 600; border-bottom: 1px solid var(--line); }
   .banner .msg { flex: 1; }
   .banner[hidden] { display: none; }
+  .bell-n { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: var(--sell); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; border: 2px solid var(--panel); }
+  .bell-n[hidden] { display: none; }
+  .notif { position: fixed; top: 64px; right: 20px; width: min(400px, calc(100vw - 32px)); max-height: 70vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgb(0 0 0 / .18); z-index: 30; overflow: hidden; }
+  .notif[hidden] { display: none; }
+  .notif .nhead, .notif .nfoot { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .notif .nfoot { border-bottom: 0; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .notif .spacer { flex: 1; }
+  .notif .nlist { overflow-y: auto; }
+  .nitem { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; padding: 10px 14px; cursor: pointer; }
+  .nitem:hover { background: var(--bg); }
+  .nitem.new { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .nitem .nrow { display: flex; align-items: center; gap: 8px; }
+  .nitem .nwhy { font-size: 12.5px; color: var(--muted); margin-top: 4px; white-space: normal; }
+  button.link { border: 0; background: none; color: var(--accent); padding: 0; font-size: 13px; }
   .pill.INFO { color: var(--accent); background: var(--zone); }
   .vol { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 99px; color: #b45309; background: #fef3c7; }
   :root[data-theme="dark"] .vol { color: #fbbf24; background: #3a2a0a; }
@@ -234,11 +248,13 @@
   <h1><span data-icon="activity"></span>Thndr Radar</h1>
   <span id="market" class="pill"></span>
   <span id="updated" class="muted"></span>
+  <button id="bell" class="x" style="border:1px solid var(--line);padding:7px;position:relative" title="Alerts"><span data-icon="bell"></span><span id="bell-n" class="bell-n" hidden></span></button>
   <button id="phone" class="x" style="border:1px solid var(--line);padding:7px" title="Open on your phone"><span data-icon="phone"></span></button>
   <button id="theme" class="x" style="border:1px solid var(--line);padding:7px" title="Dark / light mode"></button>
   <button id="login">Log in to Thndr</button>
   <button id="refresh" class="primary"><span data-icon="refresh"></span>Refresh</button>
 </header>
+<div class="notif" id="notif" hidden></div>
 <div class="banner" id="banner" hidden><span data-icon="alert"></span><span class="msg" id="banner-msg"></span><button class="primary" id="banner-login">Log in to Thndr</button></div>
 <main>
   <section id="pf"></section>
@@ -317,6 +333,7 @@ const ICONS = {
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
   eye: '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
   eyeoff: '<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>',
+  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
   phone: '<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>',
   alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
@@ -420,6 +437,7 @@ let last = null, sideSym = null;
 function render(s) {
   last = s;
   renderBanner(s);
+  renderBell(s);
   renderPortfolio(s);
   if (view.startsWith('rules:') && $('dlg').open) renderRules();
   $('market').textContent = s.market ? 'Market open' : 'Market closed';
@@ -538,7 +556,7 @@ function renderRules() {
       <input id="rval" type="number" step="any" min="0" placeholder="${fmt(row.price)}" required style="width:90px;flex:none">
       <button class="primary">${icon('plus')}Add</button>
     </form>
-    <p class="muted" style="font-size:12px">You get a desktop notification when an alert is reached (once a day per alert), checked live while the market is open (Thndr's realtime feed), every 15 min otherwise.</p>`;
+    <p class="muted" style="font-size:12px">You get a desktop notification when an alert is reached (once a day per alert), checked live while the market is open (Thndr's realtime feed), every 15 min otherwise. Buy-zone, stop-loss and target alerts are already automatic for every stock; add your own levels here.</p>`;
   const save = (data) => api('/api/rules', { sym, ...data }).catch((e) => msg(e.message));
   $('dlg-body').querySelectorAll('[data-sugg]').forEach((b) => { b.onclick = () => save({ add: sugg[b.dataset.sugg] }); });
   $('dlg-body').querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => save({ remove: b.dataset.del }); });
@@ -674,7 +692,7 @@ const HELP = {
     if (pl.rr != null) out.push(`<p><b>المخاطرة للعائد 1 : <bdi>${pl.rr}</bdi>:</b> يعني لو اشتريت من منطقة الشراء، مقابل كل 1 جنيه ممكن تخسره (لحد وقف الخسارة)، ممكن تكسب <bdi>${pl.rr}</bdi> جنيه (لحد الهدف الأول). أكتر من 2 يعتبر كويس، وأقل من 1 يعتبر مش مستاهل.</p>`);
     out.push(`<p><b>الحركة اليومية المعتادة (±${n(pl.move)}):</b> السهم بيطلع أو ينزل في المتوسط بالمقدار ده في اليوم الواحد.</p>`);
     if (avg) out.push(`<p><b>إنت شاري السهم ده بمتوسط ${n(avg)}.</b> ${avg > r.price ? `إنت خسران دلوقتي <bdi>${fmt(((r.price - avg) / avg) * 100, 1)}%</bdi>. لو رجع لـ ${n(avg)} تبقى خرجت من غير خسارة (التعادل).` : `إنت كسبان دلوقتي <bdi>+${fmt(((r.price - avg) / avg) * 100, 1)}%</bdi>.`} لو قفل تحت ${n(pl.stop)} فكّر تقلل الكمية عشان الخسارة ما تكبرش.</p>`);
-    out.push(`<p class="note">الأرقام دي محسوبة من حركة السعر في آخر 20–60 يوم. مش توقع مضمون ولا نصيحة مالية. زرار <bdi>"Alert me at these prices"</bdi> بيبعتلك تنبيه لما السعر يوصل للأرقام دي.</p>`);
+    out.push(`<p class="note">الأرقام دي محسوبة من حركة السعر في آخر 20–60 يوم. مش توقع مضمون ولا نصيحة مالية. البرنامج بيبعتلك تنبيه أوتوماتيك لما السعر يدخل منطقة الشراء${avg ? '، أو يوصل لوقف الخسارة، أو للهدف الأول، أو يرجع لمتوسطك' : ''} (على كل الأسهم اللي في القايمة، من غير ما تعمل حاجة).</p>`);
     return out.join('');
   },
   chart: () => `
@@ -771,13 +789,9 @@ function renderPlan() {
     ${avg ? `<p style="margin:10px 0 0;font-size:13px"><b>You hold this</b> at avg ${fmt(avg)} (<span class="${r.price >= avg ? 'up' : 'down'}">${r.price >= avg ? '+' : ''}${fmt(((r.price - avg) / avg) * 100, 1)}%</span> so far). Plan: sell part at <b class="num">${pl.t1 == null ? '—' : fmt(pl.t1)}</b>${avg > r.price ? `, break-even at <b>${fmt(avg)}</b>` : ''}; cut the loss if it closes below <b class="down">${fmt(pl.stop)}</b>.</p>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px">
       <span class="muted" style="font-size:11px">Levels from the last 20–60 days of prices. Not a prediction or financial advice.</span>
-      ${todo.length ? `<button id="plan-add" class="primary" style="white-space:nowrap">${icon('bell')}Alert me at these prices</button>` : `<span class="up" style="font-size:12px;white-space:nowrap;display:inline-flex;gap:4px">${icon('check')}Alerts set</span>`}
+      <span class="up" style="font-size:12px;white-space:nowrap;display:inline-flex;gap:4px;align-items:center" title="You get a notification automatically when the price enters the buy zone${avg ? ', hits the stop-loss, reaches Target 1 or gets back to your average' : ''}. Levels are fixed at yesterday's close.">${icon('bell')}Automatic alerts on</span>
     </div>`;
-  const btn = $('plan-add');
-  if (btn) btn.onclick = async () => {
-    btn.disabled = true;
-    for (const a of todo) await api('/api/rules', { sym: sideSym, add: a }).catch(() => {});
-  };
+  void todo;
 }
 
 async function getJson(url) {
@@ -1217,6 +1231,95 @@ $('phone').onclick = async () => {
   try { const r = await fetch('/api/remote'); const j = await r.json(); if (!r.ok) throw new Error(j.error); paint(j); }
   catch (e) { $('dlg-body').innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
 };
+
+// ---- Bell: unread alerts (since you last opened the list), dropdown, and notification settings ----
+let notifSeen = '';
+try { notifSeen = localStorage.getItem('notifSeen') || ''; } catch {}
+function renderBell(s) {
+  const n = (s.log || []).filter((e) => e.time > notifSeen).length;
+  $('bell-n').hidden = !n;
+  $('bell-n').textContent = n > 99 ? '99+' : n;
+  $('bell').title = n ? `${n} new alert${n > 1 ? 's' : ''}` : 'Alerts';
+  if (!$('notif').hidden) renderNotif();
+}
+const ago = (t) => {
+  const m = Math.round((Date.now() - new Date(t)) / 60000);
+  return m < 1 ? 'now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
+function renderNotif() {
+  const items = (last?.log || []).slice(0, 30);
+  const pill = (e) => `<span class="pill ${e.side === 'BUY' ? 'BUY' : e.side === 'INFO' ? 'INFO' : 'SELL'}">${e.side === 'INFO' ? 'Info' : esc(e.side)}</span>`;
+  $('notif').innerHTML = `
+    <div class="nhead"><b>Alerts</b><span class="spacer"></span>
+      <button class="link" id="n-read">Mark all read</button>
+      <button class="x" id="n-settings" title="Notification settings">${icon('gear')}</button></div>
+    <div class="nlist">${items.map((e) => `<button class="nitem${e.time > notifSeen ? ' new' : ''}" data-nsym="${esc(e.sym)}">
+        <div class="nrow">${pill(e)}<b>${esc(e.sym)}</b>${e.price != null ? `<span class="muted">@ ${fmt(e.price)}</span>` : ''}<span class="spacer"></span><span class="muted" style="font-size:11px">${ago(e.time)}</span></div>
+        <div class="nwhy">${esc(e.why)}</div></button>`).join('') || '<p class="muted" style="padding:14px">No alerts yet.</p>'}</div>
+    <div class="nfoot">${icon('phone')}Phone push: <b>${last?.push ? 'on' : 'off'}</b><span class="spacer"></span><button class="link" id="n-setup">${last?.push ? 'Settings' : 'Set up'}</button></div>`;
+  $('n-read').onclick = markRead;
+  $('n-settings').onclick = $('n-setup').onclick = () => { closeNotif(); openNotifSettings(); };
+}
+function markRead() {
+  notifSeen = last?.log?.[0]?.time || new Date().toISOString();
+  try { localStorage.setItem('notifSeen', notifSeen); } catch {}
+  if (last) renderBell(last);
+}
+function openNotif() { $('notif').hidden = false; renderNotif(); }
+function closeNotif() { if (!$('notif').hidden) { $('notif').hidden = true; markRead(); } }
+$('bell').onclick = (e) => { e.stopPropagation(); $('notif').hidden ? openNotif() : closeNotif(); };
+$('notif').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const sym = e.target.closest('[data-nsym]')?.dataset.nsym;
+  if (sym && sym !== 'undefined') { closeNotif(); openSide(sym); }
+});
+document.addEventListener('click', () => closeNotif());
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNotif(); });
+
+async function openNotifSettings() {
+  $('dlg-title').textContent = 'Notifications';
+  view = 'notify'; msg();
+  $('dlg-body').innerHTML = '<p class="muted">Loading…</p>';
+  if (!$('dlg').open) $('dlg').showModal();
+  const post = (url, data) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) })
+    .then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error); return j; });
+  const paint = (st) => {
+    $('dlg-body').innerHTML = `
+      <p><b>${icon('activity')} Desktop</b> <span class="pill BUY">On</span><br><span class="muted" style="font-size:12px">Pop-ups on this computer while Thndr Radar runs.</span></p>
+      <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+      <p><b>${icon('phone')} Phone push (ntfy)</b> ${st.ntfyTopic ? '<span class="pill BUY">On</span>' : '<span class="pill HOLD">Off</span>'}</p>
+      ${st.ntfyTopic ? `
+        <ol style="margin:0 0 8px 18px;padding:0;font-size:13px;line-height:1.7">
+          <li>Install the free <b>ntfy</b> app (Google Play / App Store).</li>
+          <li>Tap <b>+</b> and subscribe to the topic <code style="user-select:all">${esc(st.ntfyTopic)}</code>, or scan this:</li>
+        </ol>
+        <div class="qr" style="width:160px">${st.ntfyQr}</div>
+        <p style="display:flex;gap:8px;flex-wrap:wrap"><button id="ns-new">New topic</button><button id="ns-off">Turn off</button></p>`
+      : `<p class="muted" style="font-size:12px;margin-top:0">Get alerts on your phone anywhere (not only on Wi-Fi). Free, no account.</p><p><button class="primary" id="ns-on">Set up phone push</button></p>`}
+      <p class="muted" style="font-size:11px">Alerts pass through the public ntfy.sh server; the random topic name is the password, so keep it private.</p>
+      <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+      <p><b>Telegram</b> ${st.telegram ? '<span class="pill BUY">On</span>' : '<span class="pill HOLD">Off</span>'}</p>
+      <form id="ns-tg" class="row" style="flex-wrap:wrap">
+        <input id="ns-token" placeholder="Bot token (from @BotFather)" autocomplete="off" style="min-width:200px">
+        <input id="ns-chat" placeholder="Chat id" value="${esc(st.telegramChat)}" style="width:120px;flex:none">
+        <button>Save</button>
+      </form>
+      <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+      <p><button class="primary" id="ns-test">${icon('bell')}Send a test notification</button> <span id="ns-res" class="muted" style="font-size:12px"></span></p>`;
+    const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+    const save = (data) => post('/api/settings', data).then((j) => { paint(j); load(); }).catch((e) => msg(e.message));
+    on('ns-on', () => save({ newNtfyTopic: true }));
+    on('ns-new', () => save({ newNtfyTopic: true }));
+    on('ns-off', () => save({ ntfyTopic: '' }));
+    $('ns-tg').onsubmit = (e) => { e.preventDefault(); const t = $('ns-token').value.trim(); save({ ...(t ? { telegramToken: t } : {}), telegramChat: $('ns-chat').value.trim() }); };
+    on('ns-test', () => {
+      $('ns-res').textContent = 'Sending…';
+      post('/api/test-notify', {}).then((r) => { $('ns-res').textContent = Object.entries(r).map(([k, v]) => `${k}: ${v}`).join(' · '); }).catch((e) => { $('ns-res').textContent = e.message; });
+    });
+  };
+  try { const r = await fetch('/api/settings'); const j = await r.json(); if (!r.ok) throw new Error(j.error); paint(j); }
+  catch (e) { $('dlg-body').innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+}
 
 load();
 // Prices arrive live from Thndr's realtime feed: the server pushes a tick and the page reloads its state.

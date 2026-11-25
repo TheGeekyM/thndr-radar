@@ -88,6 +88,7 @@ export function analyze(sym, closes) {
     plan: plan(closes),
     // Stop-loss as it stood before the latest bar: plan().stop always sits below today's price, so this is the one a drop can break.
     prevStop: closes.length > 22 ? plan(closes.slice(0, -1)).stop : null,
+    prevPlan: closes.length > 22 ? plan(closes.slice(0, -1)) : null, // levels as of yesterday's close (for automatic alerts)
     // Previous 20 sessions (today excluded): where the price recently stopped falling / rising.
     support: closes.length > 21 ? Math.min(...closes.slice(-21, -1)) : null,
     resistance: closes.length > 21 ? Math.max(...closes.slice(-21, -1)) : null,
@@ -140,6 +141,31 @@ export function backtest(closes) {
   }
   const planOpen = pos ? { buy: pos.price, nowPct: pct(pos.price, closes.at(-1)), days: closes.length - 1 - pos.i } : null;
   return { days: closes.length, rsi: summary(rsiTrades, rsiOpen), plan: summary(planTrades, planOpen), buyHoldPct: pct(closes[0], closes.at(-1)) };
+}
+
+/**
+ * Automatic alerts for every stock on the list, from the trade plan as of yesterday's close (fixed levels, so they
+ * don't move with today's price). pos = Thndr position if you own it.
+ *  BUY        price entered the buy zone (above the stop)                  — every stock
+ *  SELL stop  price at/below the stop-loss                                  — stocks you own
+ *  SELL t1    price at/above Target 1                                       — stocks you own
+ *  INFO even  price climbed back to your average (it was below yesterday)   — stocks you own
+ */
+export function autoSignals(row, pos) {
+  const pp = row?.prevPlan, price = row?.price, out = [];
+  if (!pp || price == null) return out;
+  const f = (n) => Math.round(n * 100) / 100;
+  if (pp.buyLo != null && pp.buyHi != null && price <= pp.buyHi && price > pp.stop) {
+    out.push({ kind: 'zone', side: 'BUY', why: `Entered the buy zone ${f(pp.buyLo)}–${f(pp.buyHi)} (support). Stop-loss ${f(pp.stop)}${pp.t1 != null ? `, Target 1 ${f(pp.t1)}` : ''}.` });
+  }
+  const avg = pos?.averageCost ?? pos?.avg;
+  if (avg != null) {
+    if (price <= pp.stop) out.push({ kind: 'stop', side: 'SELL', why: `Fell to the stop-loss ${f(pp.stop)}: the plan broke. Consider cutting the loss (your average ${f(avg)}).` });
+    if (pp.t1 != null && price >= pp.t1) out.push({ kind: 't1', side: 'SELL', why: `Reached Target 1 ${f(pp.t1)}: consider taking some profit${price > avg ? ` (+${f(((price - avg) / avg) * 100)}% on your average)` : ''}.` });
+    const prev = row.change != null ? price / (1 + row.change / 100) : null;
+    if (prev != null && prev < avg && price >= avg) out.push({ kind: 'even', side: 'INFO', why: `Back to your average ${f(avg)} (break-even). You can exit without a loss now.` });
+  }
+  return out;
 }
 
 /** Buying n more shares at price: new average cost (= new break-even, before fees) and the extra money needed. */
@@ -363,6 +389,14 @@ function selfTest() {
   assert(JSON.stringify(toInput(['get-price-snapshot', 'COMI', 'HRHO'])) === '["get_price_snapshot",{"symbols":["COMI","HRHO"]}]', 'toInput snapshot');
   assert(JSON.stringify(toInput(['login-verify-code', '--code=012345'])) === '["login_verify_code",{"code":"012345"}]', 'code stays a string');
   assert(toInput(['get-news', '--symbol=COMI', '--content-chars=0'])[1].contentChars === 0, 'kebab flags -> camelCase numbers');
+  // autoSignals: levels from yesterday's plan
+  const ap = { prevPlan: { buyLo: 100, buyHi: 101, stop: 98, t1: 110 }, change: 0 };
+  assert(autoSignals({ ...ap, price: 100.5 }, null).map((x) => x.kind).join() === 'zone', 'zone for any stock');
+  assert(autoSignals({ ...ap, price: 97 }, null).length === 0, 'not held: no stop alert');
+  assert(autoSignals({ ...ap, price: 97 }, { averageCost: 105 }).map((x) => x.kind).join() === 'stop', 'held: stop');
+  assert(autoSignals({ ...ap, price: 111 }, { averageCost: 105 }).map((x) => x.kind).join() === 't1', 'held: target');
+  assert(autoSignals({ ...ap, price: 105, change: 2 }, { averageCost: 104 }).map((x) => x.kind).join() === 'even', 'back to break-even');
+  assert(autoSignals({ ...ap, price: 105, change: 0 }, { averageCost: 104 }).length === 0, 'already above average: no repeat');
   console.log('self-test ok');
 }
 

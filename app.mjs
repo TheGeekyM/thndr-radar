@@ -9,7 +9,7 @@ import { networkInterfaces } from 'node:os';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { advise, analyze, backtest, firebaseIdToken, history, RULE_TYPES, ruleHit, ruleText, telegram, thndr } from './alerts.mjs';
+import { advise, analyze, autoSignals, backtest, firebaseIdToken, history, RULE_TYPES, ruleHit, ruleText, telegram, thndr } from './alerts.mjs';
 
 // ponytail: reuse the QR library thndr-mcp already ships instead of adding our own dependency.
 // Defaults so a packaged app needs no env vars: bundled thndr CLI, and on Windows data in %APPDATA%\ThndrRadar.
@@ -50,6 +50,12 @@ const WIN_TOAST = `$x=[Windows.UI.Notifications.ToastNotificationManager,Windows
 $t=$x.GetElementsByTagName('text');$t.Item(0).AppendChild($x.CreateTextNode($env:RADAR_T))>$null;$t.Item(1).AppendChild($x.CreateTextNode($env:RADAR_B))>$null;
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe').Show([Windows.UI.Notifications.ToastNotification]::new($x))`;
 
+function notifyDesktopOnly(title, body) {
+  if (process.platform === 'win32') execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', WIN_TOAST], { env: { ...process.env, RADAR_T: title, RADAR_B: body }, windowsHide: true }, () => {});
+  else if (process.platform === 'darwin') execFile('osascript', ['-e', 'on run a\ndisplay notification (item 2 of a) with title (item 1 of a)\nend run', title, body], () => {});
+  else execFile('notify-send', ['-a', 'Thndr Radar', title, body], () => {});
+}
+
 function notify(title, body) {
   if (process.platform === 'win32') {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', WIN_TOAST], { env: { ...process.env, RADAR_T: title, RADAR_B: body }, windowsHide: true }, () => {});
@@ -61,6 +67,16 @@ function notify(title, body) {
   if (config.telegramToken && config.telegramChat) {
     telegram(config.telegramToken, config.telegramChat, `${title}\n${body}`).catch((e) => console.error(e.message));
   }
+  if (config.ntfyTopic) ntfy(title, body).catch((e) => console.error('ntfy:', e.message));
+}
+
+// Phone push via ntfy (free app, no account): JSON publish keeps emoji/Arabic intact. The topic name is the secret.
+async function ntfy(title, message) {
+  const res = await fetch('https://ntfy.sh/', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ topic: config.ntfyTopic, title, message, priority: 4, tags: ['chart_with_upwards_trend'] }),
+  });
+  if (!res.ok) throw new Error(`ntfy ${res.status}`);
 }
 
 /** Logs + notifies once per day per key. */
@@ -74,6 +90,10 @@ function fire(key, sym, side, price, why) {
 
 function checkRules(row) {
   const { day } = cairo();
+  // Automatic plan alerts for every stock on the list (no setup needed): buy zone, stop-loss, Target 1, break-even.
+  if (config.autoAlerts !== false) {
+    for (const a of autoSignals(row, state.positions[row.sym])) fire(`${day}:${row.sym}:auto:${a.kind}`, row.sym, a.side, row.price, a.why);
+  }
   for (const r of config.rules[row.sym] ?? []) {
     if (ruleHit(r, row)) fire(`${day}:${row.sym}:rule:${r.id}`, row.sym, r.side, row.price, `${r.note || 'Your alert'}: ${ruleText(r)}`);
   }
@@ -380,6 +400,14 @@ const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.s
 const cookie = (req, name) => (req.headers.cookie ?? '').split(';').map((c) => c.trim().split('=')).find(([k]) => k === name)?.[1] ?? null;
 const tokenOk = (given, tok) => !!given && given.length === tok.length && timingSafeEqual(Buffer.from(given), Buffer.from(tok));
 const lanIps = () => Object.values(networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i.address);
+async function settingsInfo() {
+  const url = config.ntfyTopic ? `https://ntfy.sh/${config.ntfyTopic}` : null;
+  return {
+    ntfyTopic: config.ntfyTopic || '', ntfyUrl: url, ntfyQr: url ? await QRCode.toString(url, { type: 'svg', margin: 1 }) : null,
+    telegram: !!(config.telegramToken && config.telegramChat), telegramChat: config.telegramChat || '',
+  };
+}
+
 async function remoteInfo() {
   const on = !!config.remote?.enabled, ip = lanIps()[0];
   const url = on && ip ? `http://${ip}:${PORT}/?t=${config.remote.token}` : null;
@@ -448,7 +476,7 @@ async function body(req) {
 // Advice for each stock you hold, recomputed with the live price on every request.
 const advice = () => Object.fromEntries(state.rows.filter((r) => state.positions[r.sym]).map((r) => [r.sym, advise(r, state.positions[r.sym])]));
 const snapshot = () => ({
-  ...state, advice: advice(), log, rules: config.rules, logos, netHistory, remote: !!config.remote?.enabled, running: !!running, market: cairo().open, telegram: !!(config.telegramToken && config.telegramChat),
+  ...state, advice: advice(), log, rules: config.rules, push: !!config.ntfyTopic, logos, netHistory, remote: !!config.remote?.enabled, running: !!running, market: cairo().open, telegram: !!(config.telegramToken && config.telegramChat),
 });
 
 const server = http.createServer(async (req, res) => {
@@ -505,6 +533,33 @@ const server = http.createServer(async (req, res) => {
         if (kind === 'news') return json(await news(sym, u.searchParams.get('locale') === 'ar' ? 'ar' : 'en'));
         return json(await backtestOf(sym));
       } catch (e) { return json({ error: e.message }, 400); }
+    }
+    if (req.method === 'GET' && req.url === '/api/settings') {
+      if (!isLocal(req)) return json({ error: 'Only from this computer' }, 403);
+      return json(await settingsInfo());
+    }
+    if (req.method === 'POST' && req.url === '/api/settings') {
+      // Notification settings: only from this computer (they hold the Telegram token / ntfy topic).
+      if (!isLocal(req)) return json({ error: 'Only from this computer' }, 403);
+      const b = await body(req);
+      if ('ntfyTopic' in b) {
+        const t = String(b.ntfyTopic ?? '').trim();
+        if (t && !/^[A-Za-z0-9_-]{8,64}$/.test(t)) return json({ error: 'Topic: 8–64 letters, digits, - or _' }, 400);
+        config.ntfyTopic = t;
+      }
+      if (b.newNtfyTopic) config.ntfyTopic = `radar-${randomBytes(9).toString('base64url')}`;
+      if ('telegramToken' in b) config.telegramToken = String(b.telegramToken ?? '').trim();
+      if ('telegramChat' in b) config.telegramChat = String(b.telegramChat ?? '').trim();
+      saveJson('config.json', config);
+      return json(await settingsInfo());
+    }
+    if (req.method === 'POST' && req.url === '/api/test-notify') {
+      if (!isLocal(req)) return json({ error: 'Only from this computer' }, 403);
+      const results = {};
+      notifyDesktopOnly('🔔 Thndr Radar test', 'Desktop notifications work.'); results.desktop = 'sent';
+      if (config.ntfyTopic) results.phone = await ntfy('🔔 Thndr Radar test', 'Phone push works.').then(() => 'sent', (e) => e.message);
+      if (config.telegramToken && config.telegramChat) results.telegram = await telegram(config.telegramToken, config.telegramChat, '🔔 Thndr Radar test: Telegram works.').then(() => 'sent', (e) => e.message);
+      return json(results);
     }
     if (req.method === 'GET' && req.url === '/api/remote') {
       if (!isLocal(req)) return json({ error: 'Only from this computer' }, 403);
