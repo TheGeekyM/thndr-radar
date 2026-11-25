@@ -79,12 +79,15 @@ async function ntfy(title, message) {
   if (!res.ok) throw new Error(`ntfy ${res.status}`);
 }
 
-/** Logs + notifies once per day per key. */
-function fire(key, sym, side, price, why) {
+/** Logs + notifies once per key (keys include the day). silent: log only (used to record the starting advice). */
+const SIDE_ICON = { BUY: '🟢', SELL: '🔴', WAIT: '🟡', HOLD: '⚪', INFO: '🔵' };
+function fire(key, sym, side, price, why, { silent = false } = {}) {
   if (log.some((e) => e.key === key)) return;
   log.unshift({ key, time: new Date().toISOString(), sym, side, price, why });
   log = log.slice(0, 500);
   saveJson('alerts-log.json', log);
+  if (silent) return;
+  if (side === 'WAIT' || side === 'HOLD') return notify(`${SIDE_ICON[side]} ${side} ${sym} @ ${price}`, why);
   notify(side === 'INFO' ? `🔵 ${sym}${price != null ? ` @ ${price}` : ''}` : `${side === 'BUY' ? '🟢' : '🔴'} ${side} ${sym} @ ${price}`, why);
 }
 
@@ -175,6 +178,24 @@ function pushToPages() {
 }
 setInterval(() => { for (const res of pages) res.write(': keep-alive\n\n'); }, 25_000);
 let authNotified = false;
+
+// Advice for your position as an alert: when the advice for a stock you own changes (e.g. Hold → Wait → Average down),
+// you get it like any other alert. Checked on the 15-min run only (no flip-flopping on every price tick).
+// The first time a stock is seen, its current advice is only recorded (shows in "Last alert", no notification flood).
+const adviceState = readJson('advice-state.json', {});
+const ADVICE_SIDE = { SELL: 'SELL', TAKE_PROFIT: 'SELL', AVERAGE_DOWN: 'BUY', WAIT: 'WAIT', HOLD: 'HOLD' };
+const ADVICE_NAME = { SELL: 'Sell / reduce', TAKE_PROFIT: 'Take profit', AVERAGE_DOWN: 'Average down', WAIT: 'Wait', HOLD: 'Hold' };
+function adviceAlerts(day) {
+  let changed = false;
+  for (const sym of state.held) {
+    const row = state.rows.find((r) => r.sym === sym), a = row && advise(row, state.positions[sym]);
+    if (!a || adviceState[sym] === a.action) continue;
+    const first = !(sym in adviceState);
+    fire(`${day}:${sym}:advice:${a.action}`, sym, ADVICE_SIDE[a.action], row.price, `Your position: ${ADVICE_NAME[a.action]}. ${a.why}`, { silent: first });
+    adviceState[sym] = a.action; changed = true;
+  }
+  if (changed) saveJson('advice-state.json', adviceState);
+}
 
 // Volume spike: today's traded shares ≥ 2× the 30-day average (one snapshot call for all stocks). Shown in the table too.
 async function volumeSpikes(day) {
@@ -323,6 +344,7 @@ function run() {
     if (!authFail) {
       await volumeSpikes(day).catch((e) => console.error('volume:', e.message));
       syncStreams();
+      adviceAlerts(day);
       await newsAlerts().catch((e) => console.error('news:', e.message));
       recordNetWorth(day);
     }
