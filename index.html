@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Thndr Radar</title>
+<script>try { if (localStorage.getItem('lang') === 'ar') { document.documentElement.lang = 'ar'; document.documentElement.dir = 'rtl'; } } catch {}</script>
 <style>
   :root {
     --bg: #f6f7f9; --panel: #fff; --text: #1b1f24; --muted: #69707a; --line: #e3e6ea;
@@ -119,6 +120,23 @@
   .banner { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: var(--sell-bg); color: var(--sell); font-weight: 600; border-bottom: 1px solid var(--line); }
   .banner .msg { flex: 1; }
   .banner[hidden] { display: none; }
+  /* Profile dropdown */
+  .profile { position: relative; }
+  .avatar { display: inline-flex; align-items: center; gap: 2px; padding: 4px 6px 4px 4px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); position: relative; }
+  .avatar .ic:first-child { width: 26px; height: 26px; padding: 4px; border-radius: 50%; background: var(--accent); color: #fff; }
+  .avatar .ic:nth-child(2) { width: 14px; height: 14px; color: var(--muted); }
+  .pdot { position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--sell); border: 2px solid var(--panel); }
+  .pdot[hidden] { display: none; }
+  .pmenu { position: absolute; top: calc(100% + 8px); right: 0; width: 260px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgb(0 0 0 / .18); z-index: 40; padding: 6px; }
+  .pmenu[hidden] { display: none; }
+  .phead { display: flex; align-items: center; gap: 10px; padding: 8px 8px 10px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+  .pav { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: #fff; }
+  .mi { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; background: none; padding: 9px 10px; border-radius: 8px; font-size: 14px; text-align: start; color: var(--text); }
+  .mi:hover { background: var(--bg); }
+  .mi.warn { color: var(--sell); font-weight: 600; }
+  .msep { height: 1px; background: var(--line); margin: 6px 4px; }
+  [dir="rtl"] .pmenu { right: auto; left: 0; }
+  [dir="rtl"] .pdot { right: auto; left: -2px; }
   .bell-n { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: var(--sell); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; border: 2px solid var(--panel); }
   .bell-n[hidden] { display: none; }
   .notif { position: fixed; top: 64px; right: 20px; width: min(400px, calc(100vw - 32px)); max-height: 70vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgb(0 0 0 / .18); z-index: 30; overflow: hidden; }
@@ -188,6 +206,24 @@
   .snews a { color: var(--text); text-decoration: none; } .snews a:hover { color: var(--accent); }
   .snews .ic { width: 14px; height: 14px; margin-top: 2px; flex: none; color: var(--muted); }
   .sbtns { margin-top: 10px; display: flex; gap: 8px; }
+  /* ---- Arabic / RTL ---- */
+  [dir="rtl"] body { font-family: "Noto Sans Arabic", "Segoe UI", Tahoma, system-ui, sans-serif; }
+  [dir="rtl"] #rows tr.sep td { text-align: right !important; }
+  [dir="rtl"] .nitem { text-align: right; }
+  [dir="rtl"] .scol .scard { border-left: 1px solid var(--line); border-right: 3px solid var(--c); }
+  [dir="rtl"] .scen { display: none; }
+  [dir="rtl"] .bar, [dir="rtl"] .book, [dir="rtl"] .press, [dir="rtl"] .alloc, [dir="rtl"] .range .track, [dir="rtl"] .chart { direction: ltr; }
+  [dir="rtl"] td.num, [dir="rtl"] .pnl, [dir="rtl"] .chip .money, [dir="rtl"] .nw, [dir="rtl"] .v, [dir="rtl"] .big, [dir="rtl"] .chg, [dir="rtl"] .num { unicode-bidi: isolate; direction: ltr; }
+  [dir="rtl"] .shead .up, [dir="rtl"] .shead .down { unicode-bidi: isolate; direction: ltr; text-align: left; }
+  [dir="rtl"] .slevels b, [dir="rtl"] .slevels .up, [dir="rtl"] .slevels .down,
+  [dir="rtl"] .lvl .v, [dir="rtl"] .lvl .d, [dir="rtl"] .chip > span:not(.k), [dir="rtl"] td.up, [dir="rtl"] td.down { unicode-bidi: isolate; direction: ltr; display: inline-block; }
+  [dir="rtl"] aside { right: auto; left: 20px; transform: translateX(calc(-100% - 40px)); }
+  [dir="rtl"] body.side-open aside { transform: none; }
+  [dir="rtl"] body.side-open main, [dir="rtl"] body.side-open footer { margin-right: 0; margin-left: 600px; }
+  [dir="rtl"] .notif { right: auto; left: 20px; }
+  [dir="rtl"] .bell-n { right: auto; left: -6px; }
+  [dir="rtl"] .views { justify-self: end; }
+  @media (max-width: 1300px) { [dir="rtl"] body.side-open main, [dir="rtl"] body.side-open footer { margin-left: 0; } [dir="rtl"] aside { left: 16px; right: 16px; } }
   /* Net-worth card (Thndr-style) */
   .pf { display: grid; grid-template-columns: minmax(260px, 1.2fr) 2fr; gap: 24px; align-items: center; }
   .pf .lbl { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
@@ -297,10 +333,19 @@
   <span id="market" class="pill"></span>
   <span id="updated" class="muted"></span>
   <button id="bell" class="x" style="border:1px solid var(--line);padding:7px;position:relative" title="Alerts"><span data-icon="bell"></span><span id="bell-n" class="bell-n" hidden></span></button>
-  <button id="phone" class="x" style="border:1px solid var(--line);padding:7px" title="Open on your phone"><span data-icon="phone"></span></button>
-  <button id="theme" class="x" style="border:1px solid var(--line);padding:7px" title="Dark / light mode"></button>
-  <button id="login">Log in to Thndr</button>
   <button id="refresh" class="primary"><span data-icon="refresh"></span>Refresh</button>
+  <div class="profile">
+    <button id="prof" class="avatar" title="My account"><span data-icon="user"></span><span data-icon="chevron"></span><span id="prof-dot" class="pdot" hidden></span></button>
+    <div id="profmenu" class="pmenu" hidden>
+      <div class="phead"><span class="pav"><span data-icon="user"></span></span><div><b>My account</b><div class="muted" id="prof-status" style="font-size:12px"></div></div></div>
+      <button id="login" class="mi"></button>
+      <button id="notif-set" class="mi"><span data-icon="gear"></span>Notifications</button>
+      <button id="phone" class="mi"><span data-icon="phone"></span>Open on your phone</button>
+      <div class="msep"></div>
+      <button id="theme" class="mi"></button>
+      <button id="lang" class="mi"></button>
+    </div>
+  </div>
 </header>
 <div class="notif" id="notif" hidden></div>
 <div class="banner" id="banner" hidden><span data-icon="alert"></span><span class="msg" id="banner-msg"></span><button class="primary" id="banner-login">Log in to Thndr</button></div>
@@ -384,6 +429,9 @@ const ICONS = {
   eye: '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
   eyeoff: '<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>',
   gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
   zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
   landmark: '<line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/>',
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
@@ -395,13 +443,138 @@ const ICONS = {
 };
 const icon = (n) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 document.querySelectorAll('[data-icon]').forEach((el) => { el.outerHTML = icon(el.dataset.icon); });
+// ---- Arabic (RTL) mode: top-bar toggle. Static labels via a dictionary on the rendered page (MutationObserver);
+// dynamic sentences via patterns that keep the real numbers (trText). Numbers stay left-to-right. ----
+const LANG_AR = document.documentElement.lang === 'ar';
+// ---- Profile dropdown (account, notifications, phone, theme, language) ----
+const closeProf = () => { $('profmenu').hidden = true; };
+$('prof').onclick = (e) => { e.stopPropagation(); $('profmenu').hidden = !$('profmenu').hidden; };
+$('profmenu').addEventListener('click', (e) => { e.stopPropagation(); if (e.target.closest('.mi') && e.target.closest('#theme') == null) closeProf(); });
+document.addEventListener('click', closeProf);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeProf(); });
+const AR = {
+  'Thndr Radar': 'ثاندر رادار', 'Market open': 'السوق مفتوح', 'Market closed': 'السوق مقفول', 'Refresh': 'تحديث', 'Log in to Thndr': 'دخول Thndr', 'Updating…': 'جاري التحديث…',
+  'Watchlist': 'قائمة المتابعة', 'Suggestions': 'اقتراحات', 'Net worth': 'صافي الثروة', 'Total return': 'إجمالي العائد', 'Today': 'النهارده',
+  'Stocks value': 'قيمة الأسهم', 'Invested': 'المبلغ المستثمر', 'Cash': 'الكاش', 'Buying power': 'القوة الشرائية', 'EGP': 'جنيه',
+  'Add': 'إضافة', 'All': 'الكل', 'My stocks': 'أسهمي', 'BUY': 'شراء', 'SELL': 'بيع', 'HOLD': 'احتفظ', 'WAIT': 'استنى', 'Volume spikes': 'حجم تداول عالي',
+  'Sort: newest first': 'ترتيب: الأحدث أولاً', 'Sort: my P&L %': 'ترتيب: مكسبي/خسارتي %', "Sort: today's change": 'ترتيب: تغير النهارده', 'Sort: RSI (low first)': 'ترتيب: RSI (الأقل أولاً)',
+  'Sort: signal (BUY first)': 'ترتيب: الإشارة (الشراء أولاً)', 'Sort: volume vs normal': 'ترتيب: حجم التداول', 'Sort: A–Z': 'ترتيب: أبجدي',
+  'Symbol': 'السهم', 'Signal now': 'الإشارة دلوقتي', 'Price': 'السعر', 'Change': 'التغير', 'RSI 30 days': 'RSI آخر 30 يوم', '50-day avg': 'متوسط 50 يوم', 'Trend': 'الاتجاه',
+  'Last alert': 'آخر تنبيه', 'Alerts': 'التنبيهات', 'Watching': 'بتابعها', 'Wait': 'استنى', 'Hold': 'احتفظ', 'Average down': 'اعمل متوسط', 'Take profit': 'خد مكسبك',
+  'Sell / reduce': 'بيع / قلّل', 'Info': 'معلومة', 'your position': 'حسب مركزك', 'In portfolio': 'في محفظتك', 'Above avg': 'فوق المتوسط', 'Below avg': 'تحت المتوسط',
+  'Alerts log': 'سجل التنبيهات', 'Time': 'الوقت', 'Signal': 'الإشارة', 'Reason': 'السبب', 'No alerts yet. They appear here and as desktop notifications.': 'مفيش تنبيهات لسه. هتظهر هنا وكإشعارات على الكمبيوتر.',
+  'Market': 'السوق', 'My buys': 'مشترياتي', 'Trade plan': 'خطة التداول', 'Buy zone': 'منطقة الشراء', 'Stop-loss': 'وقف الخسارة', 'Target 1': 'الهدف الأول', 'Target 2': 'الهدف التاني',
+  'no support below': 'مفيش دعم تحته', 'no level above': 'مفيش مستوى فوقه', 'Automatic alerts on': 'التنبيهات أوتوماتيك شغالة',
+  'Levels from the last 20–60 days of prices. Not a prediction or financial advice.': 'المستويات محسوبة من أسعار آخر 20–60 يوم. مش توقع ولا نصيحة مالية.',
+  'Open': 'الافتتاح', 'High': 'أعلى', 'Low': 'أقل', 'Prev close': 'إغلاق امبارح', 'Volume': 'الحجم', 'Value': 'القيمة', 'Trades': 'الصفقات', 'P/E': 'مكرر الربحية',
+  'Bid': 'أعلى شراء', 'Ask': 'أقل بيع', 'Div. yield': 'عائد التوزيع', 'Mkt cap': 'القيمة السوقية', '52-week range': 'نطاق 52 أسبوع', 'Order book': 'دفتر الأوامر',
+  'Orders': 'الأوامر', 'Bid qty': 'كمية الشراء', 'Ask qty': 'كمية البيع', 'Time (Cairo)': 'الوقت (القاهرة)', 'Qty': 'الكمية', 'Value (EGP)': 'القيمة (جنيه)',
+  'Rule': 'القاعدة', 'Won': 'كسبان', 'Avg': 'المتوسط', 'Total': 'الإجمالي', 'Just hold': 'احتفظ بس', 'RSI (buy <30, sell >70)': 'RSI (شراء تحت 30، بيع فوق 70)',
+  'Trade plan (zone → T1)': 'خطة التداول (المنطقة ← الهدف)', 'Dividends': 'التوزيعات', 'News': 'الأخبار', 'Upcoming': 'قادم', 'per share': 'للسهم', 'Loading…': 'جاري التحميل…',
+  'Short term': 'مدى قصير', 'Long term': 'مدى طويل', 'Days to a few weeks': 'أيام لأسابيع', 'Months to years': 'شهور لسنين', 'Rescan': 'افحص تاني', 'You own it': 'معاك',
+  'Entry (breakout)': 'الدخول (كسر قمة)', 'Entry': 'الدخول', 'Wait for pullback to': 'استنى تراجع لـ', 'Target': 'الهدف', 'Dividend': 'التوزيع', '1 year': 'سنة',
+  'Add to watchlist': 'أضف للمتابعة', 'Notifications': 'الإشعارات', 'Mark all read': 'اعتبرها اتقرت', 'Settings': 'الإعدادات', 'Set up': 'تفعيل', 'No alerts yet.': 'مفيش تنبيهات لسه.',
+  'Open on your phone': 'افتح على موبايلك', 'Thndr login': 'دخول Thndr', 'Send a test notification': 'ابعت إشعار تجريبي', 'Set up phone push': 'فعّل إشعارات الموبايل',
+  'Desktop': 'الكمبيوتر', 'On': 'شغال', 'Off': 'مقفول', 'Save': 'حفظ', 'New topic': 'موضوع جديد', 'Turn off': 'اقفل', 'Done': 'تمام', 'Log out': 'خروج',
+  'Send code': 'ابعت الكود', 'My account': 'حسابي', 'Thndr connected': 'Thndr متوصل', 'Not logged in': 'مش مسجل دخول', 'Dark mode': 'الوضع الليلي', 'Light mode': 'الوضع الفاتح', 'Verify': 'تأكيد', 'My position': 'مركزي', 'Spread': 'الفرق', 'Not enough price history for a plan.': 'مفيش أسعار كفاية لعمل خطة.',
+};
+const NAMES_AR = { Profitability: 'الربحية', Growth: 'النمو', 'Valuation (cheapness)': 'رخص السعر', 'Financial health': 'الصحة المالية', Efficiency: 'الكفاءة' };
+const N = '([\\d.,]+)', S = '([−+\\-]?[\\d.,]+)';
+const AR_RX = [
+  // labels with numbers
+  [new RegExp(`^Live · (.+)$`), (m, t) => `مباشر · ${t}`],
+  [new RegExp(`^Updated (.+?)( · (\\d+) stocks checked)?$`), (m, t, x, n) => `آخر تحديث ${t}${n ? ` · اتفحص ${n} سهم` : ''}`],
+  [new RegExp(`^${S} EGP$`), (m, v) => `${v} جنيه`],
+  [new RegExp(`^Avg ${N} × ${N}$`), (m, a, q) => `متوسط ${a} × ${q} سهم`],
+  [new RegExp(`^Vol ${N}×$`), (m, v) => `حجم ${v}×`],
+  [new RegExp(`^(\\d+) min ago$`), (m, n) => `من ${n} دقيقة`], [/^now$/, () => 'دلوقتي'], [new RegExp(`^(\\d+) h ago$`), (m, n) => `من ${n} ساعة`],
+  [new RegExp(`^Typical daily move ±${N}$`), (m, v) => `الحركة اليومية المعتادة ±${v}`],
+  [new RegExp(`^Risk/reward 1 : ${N}$`), (m, v) => `المخاطرة للعائد 1 : ${v}`],
+  [new RegExp(`^(.*) · sell if it falls here$`), (m, v) => `${v} · بيع لو نزل هنا`],
+  [new RegExp(`^Trades \\((\\d+)\\)$`), (m, n) => `الصفقات (${n})`], [new RegExp(`^Buyers (\\d+)%$`), (m, n) => `المشترين ${n}%`], [new RegExp(`^Sellers (\\d+)%$`), (m, n) => `البائعين ${n}%`],
+  [new RegExp(`^Spread ${N}$`), (m, v) => `الفرق ${v}`], [new RegExp(`^${N} shares$`), (m, v) => `${v} سهم`],
+  [new RegExp(`^Backtest · (\\d+)–(\\d+)$`), (m, a, b) => `اختبار القواعد · ${a}–${b}`],
+  [new RegExp(`^(Strong|Good|Watch) · ${N}$`), (m, t, v) => `${{ Strong: 'قوي', Good: 'كويس', Watch: 'تابعه' }[t]} · ${v}`],
+  [new RegExp(`^(\\d+) picks, best first$`), (m, n) => `${n} اختيارات، الأفضل الأول`],
+  [new RegExp(`^Net-worth history: recording since (.+); the chart appears after the second day\\.$`), (m, d) => `تاريخ صافي الثروة: بيتسجل من ${d}؛ الرسم هيظهر من تاني يوم.`],
+  [new RegExp(`^${S}% since then$`), (m, v) => `${v}% من وقتها`],
+  [new RegExp(`^Adding (.+)…$`), (m, s) => `جاري إضافة ${s}…`],
+  // market signal (stance)
+  [new RegExp(`^RSI ${N} neutral; (up|down)trend \\((above|below) 50-day avg\\)$`), (m, r, t) => `RSI ${r} محايد؛ اتجاه ${t === 'up' ? 'صاعد (فوق' : 'هابط (تحت'} متوسط 50 يوم)`],
+  [new RegExp(`^RSI ${N} neutral$`), (m, r) => `RSI ${r} محايد`],
+  [new RegExp(`^Oversold, RSI ${N}(; still in a downtrend, so riskier)?$`), (m, r, d) => `متشبع بيع، RSI ${r}${d ? '؛ لسه في اتجاه هابط، فالمخاطرة أعلى' : ''}`],
+  [new RegExp(`^Overbought, RSI ${N}(; uptrend may continue)?$`), (m, r, u) => `متشبع شراء، RSI ${r}${u ? '؛ الصعود ممكن يكمل' : ''}`],
+  [new RegExp(`^Oversold \\(RSI ${N}\\) but still making new lows: wait until it stops falling$`), (m, r) => `متشبع بيع (RSI ${r}) بس لسه بيعمل أسعار أقل: استنى لحد ما يبطل ينزل`],
+  [/^Not enough history$/, () => 'مفيش أسعار كفاية'],
+  // position advice
+  [new RegExp(`^Your position: (Wait|Hold|Average down|Take profit|Sell / reduce)\\. (.*)$`), (m, a, rest) => `مركزك: ${AR[a]}. ${trText(rest)}`],
+  [new RegExp(`^You're down ${N}% and the trend is down \\(below the 50-day avg\\): don't average down yet, wait for the buy zone ${N}–${N}\\.$`), (m, p, a, b) => `إنت خسران ${p}% والاتجاه هابط (تحت متوسط 50 يوم): ما تعملش متوسط دلوقتي، استنى منطقة الشراء ${a}–${b}.`],
+  [new RegExp(`^You're down ${N}% and the price is making new lows \\(no support below\\): don't average down until it stops falling\\.$`), (m, p) => `إنت خسران ${p}% والسهم لسه بيعمل أسعار أقل (مفيش دعم تحته): ما تعملش متوسط لحد ما يبطل ينزل.`],
+  [new RegExp(`^You're down ${N}% but the trend is up: hold; if you want to average down, wait for the buy zone ${N}–${N}\\.$`), (m, p, a, b) => `إنت خسران ${p}% بس الاتجاه صاعد: احتفظ؛ ولو عايز تعمل متوسط، استنى منطقة الشراء ${a}–${b}.`],
+  [new RegExp(`^You're (up|down) ${N}%: hold(?:, Target 1 is ${N})?; sell if it closes below the stop ${N}\\.$`), (m, u, p, t, s) => `إنت ${u === 'up' ? 'كسبان' : 'خسران'} ${p}%: احتفظ${t ? `، والهدف الأول ${t}` : ''}؛ بيع لو قفل تحت وقف الخسارة ${s}.`],
+  [new RegExp(`^You're down ${N}% and the price is in the buy zone \\(${N}–${N}\\) with risk/reward 1 : ${N}: buying more here lowers your average(; trend is still down, so add in small steps and respect the stop)?\\.$`), (m, p, a, b, r, d) => `إنت خسران ${p}% والسعر في منطقة الشراء (${a}–${b}) والمخاطرة للعائد 1 : ${r}: لو اشتريت هنا متوسطك هينزل${d ? '؛ بس الاتجاه لسه هابط، فاشتري بكميات صغيرة والتزم بوقف الخسارة' : ''}.`],
+  [new RegExp(`^Price ${N} fell below the stop-loss ${N}: the plan broke, so reduce or exit to keep the loss from growing\\.$`), (m, p, s) => `السعر ${p} نزل تحت وقف الخسارة ${s}: الخطة باظت، قلّل أو اخرج عشان الخسارة ما تكبرش.`],
+  [new RegExp(`^You're up ${N}% and the stock is overbought \\(RSI ${N}\\): sell part, keep the rest with the stop at ${N}\\.$`), (m, p, r, s) => `إنت كسبان ${p}% والسهم متشبع شراء (RSI ${r}): بيع جزء وسيب الباقي بوقف خسارة ${s}.`],
+  [new RegExp(`^You're up ${N}% and the price is close to Target 1 \\(${N}\\): sell part, keep the rest with the stop at ${N}\\.$`), (m, p, t, s) => `إنت كسبان ${p}% والسعر قرب من الهدف الأول (${t}): بيع جزء وسيب الباقي بوقف خسارة ${s}.`],
+  // automatic / crossing alerts
+  [new RegExp(`^RSI ${N} < 30 \\(oversold\\)$`), (m, r) => `RSI ${r} أقل من 30 (متشبع بيع)`], [new RegExp(`^RSI ${N} > 70 \\(overbought\\)$`), (m, r) => `RSI ${r} أكتر من 70 (متشبع شراء)`],
+  [new RegExp(`^price ${N} crossed (above|below) 50-day avg ${N}$`), (m, p, d, a) => `السعر ${p} ${d === 'above' ? 'طلع فوق' : 'نزل تحت'} متوسط 50 يوم ${a}`],
+  [new RegExp(`^Entered the buy zone ${N}–${N} \\(support\\)\\. Stop-loss ${N}(?:, Target 1 ${N})?\\.$`), (m, a, b, s, t) => `دخل منطقة الشراء ${a}–${b} (دعم). وقف الخسارة ${s}${t ? `، الهدف الأول ${t}` : ''}.`],
+  // suggestion reasons
+  [new RegExp(`^Uptrend: price above its 20-day \\(${N}\\) and 50-day \\(${N}\\) averages$`), (m, a, b) => `اتجاه صاعد: السعر فوق متوسط 20 يوم (${a}) و50 يوم (${b})`],
+  [new RegExp(`^Volume ${N}× the 30-day average( \\(strong interest\\))?$`), (m, v, s) => `حجم التداول ${v}× متوسط 30 يوم${s ? ' (اهتمام قوي)' : ''}`],
+  [new RegExp(`^RSI ${N} \\((healthy momentum|weak momentum|getting overbought)\\)$`), (m, r, k) => `RSI ${r} (${{ 'healthy momentum': 'زخم صحي', 'weak momentum': 'زخم ضعيف', 'getting overbought': 'بيقرب من التشبع الشرائي' }[k]})`],
+  [new RegExp(`^Rebounding: RSI back to ${N} after dipping below 35$`), (m, r) => `بيرتد: RSI رجع ${r} بعد ما نزل تحت 35`],
+  [new RegExp(`^(Near|Breaking out above) its 60-day high ${N}$`), (m, k, v) => `${k === 'Near' ? 'قريب من' : 'بيكسر'} أعلى سعر في 60 يوم ${v}`],
+  [new RegExp(`^Risk/reward 1 : ${N} from the entry to the target$`), (m, v) => `المخاطرة للعائد 1 : ${v} من الدخول للهدف`],
+  [new RegExp(`^Backtest: RSI rule won (\\d+)% of (\\d+) trades on this stock$`), (m, p, n) => `الاختبار: قاعدة RSI كسبت ${p}% من ${n} صفقات على السهم ده`],
+  [/^Making new lows below its 50-day average \(falling knife\)$/, () => 'بيعمل أسعار أقل وتحت متوسط 50 يوم (سكينة بتقع)'],
+  [new RegExp(`^Price is ${N}% above its buy zone: wait for a pullback \\(don't chase\\)$`), (m, p) => `السعر أعلى من منطقة الشراء بـ ${p}%: استنى تراجع (ما تجريش وراه)`],
+  [new RegExp(`^(Profitability|Growth|Valuation \\(cheapness\\)|Financial health|Efficiency): (\\d+)/100 vs its sector \\((.+)\\)$`), (m, k, v, sec) => `${NAMES_AR[k]}: ${v}/100 مقارنة بقطاعه (${sec})`],
+  [new RegExp(`^Dividend yield (${N}%|—)$`), (m, v) => `عائد التوزيع ${v}`],
+  [new RegExp(`^(Above|Below) its 200-day average ${N} \\(long-term trend\\)$`), (m, k, v) => `${k === 'Above' ? 'فوق' : 'تحت'} متوسط 200 يوم ${v} (الاتجاه الطويل)`],
+  [new RegExp(`^1-year performance ${S}%$`), (m, v) => `أداء سنة ${v}%`],
+  [new RegExp(`^P/E ${N}( \\(losses\\))?$`), (m, v, l) => `مكرر الربحية ${v}${l ? ' (خسارة)' : ''}`],
+  [/^No sector comparison data from Thndr$/, () => 'مفيش بيانات مقارنة بالقطاع من Thndr'],
+];
+function trText(t) {
+  if (!LANG_AR || t == null) return t;
+  const s = String(t), k = s.trim();
+  if (AR[k]) return s.replace(k, AR[k]);
+  // Numbers inside Arabic sentences are wrapped in left-to-right isolates (U+2066…U+2069) so "+28.7%" stays "+28.7%".
+  const iso = (x) => x.replace(/[\u2066\u2069]/g, '').replace(/([−+\-]?\d[\d.,]*(?:\/\d+)?%?×?(?:\s?[–-]\s?\d[\d.,]*)?)/g, '\u2066$1\u2069');
+  for (const [rx, fn] of AR_RX) { const m = k.match(rx); if (m) return s.replace(k, iso(fn(...m))); }
+  return s;
+}
+if (LANG_AR) {
+  const done = new WeakSet();
+  const walk = (root) => {
+    const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+      if (done.has(n) || !n.nodeValue.trim() || n.parentElement?.closest('script,style,svg,.help,body [dir="rtl"]')) continue;
+      const k = n.nodeValue.trim();
+      const v = k === 'Open' && n.parentElement?.closest('button') ? 'افتح' : trText(n.nodeValue);
+      if (v !== n.nodeValue) { n.nodeValue = v; done.add(n); }
+    }
+    root.querySelectorAll?.('[title],[placeholder]').forEach((el) => {
+      for (const a of ['title', 'placeholder']) { const v = el.getAttribute(a); if (v && !/[؀-ۿ]/.test(v)) { const t = a === 'placeholder' && v.startsWith('e.g. ') ? 'مثلاً ' + v.slice(5) : trText(v); if (t !== v) el.setAttribute(a, t); } }
+    });
+  };
+  new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) walk(n); else if (n.nodeType === 3 && n.parentElement) walk(n.parentElement); })
+    .observe(document.body, { childList: true, subtree: true });
+  walk(document.body);
+}
+$('lang').innerHTML = `${icon('globe')}<span>${LANG_AR ? 'English' : 'العربية'}</span>`;
+$('lang').title = LANG_AR ? 'English' : 'عربي (من اليمين للشمال)';
+$('lang').onclick = () => { try { localStorage.setItem('lang', LANG_AR ? 'en' : 'ar'); } catch {} location.reload(); };
+
 
 // ---- Dark / light toggle (top bar). Remembered per browser; until clicked, follows the system theme. ----
 const sysDark = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : sysDark.matches;
 function paintThemeBtn() {
   const dark = isDark();
-  $('theme').innerHTML = icon(dark ? 'sun' : 'moon');
+  $('theme').innerHTML = `${icon(dark ? 'sun' : 'moon')}<span>${dark ? 'Light mode' : 'Dark mode'}</span>`;
   $('theme').title = dark ? 'Switch to light mode' : 'Switch to dark mode';
 }
 try { const t = localStorage.getItem('theme'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch {}
@@ -463,9 +636,9 @@ function rsiTipAr(r) {
 }
 
 // "You're up 3.2%" in green, "You're down 15.9%" in red (text is escaped first, then wrapped).
-const colorPct = (t) => esc(t)
-  .replace(/(You(?:&#39;|')re up [\d.,]+%)/g, '<b class="up">$1</b>')
-  .replace(/(You(?:&#39;|')re down [\d.,]+%)/g, '<b class="down">$1</b>');
+const colorPct = (t) => esc(trText(t))
+  .replace(/(You(?:&#39;|')re up [\d.,]+%|إنت كسبان \u2066?[\d.,]+%\u2069?)/g, '<b class="up">$1</b>')
+  .replace(/(You(?:&#39;|')re down [\d.,]+%|إنت خسران \u2066?[\d.,]+%\u2069?)/g, '<b class="down">$1</b>');
 
 const pillCls = (side) => (['BUY', 'SELL', 'INFO', 'WAIT', 'HOLD'].includes(side) ? side : 'SELL');
 const pillTxt = (side) => (side === 'INFO' ? 'Info' : side === 'WAIT' ? 'Wait' : side === 'HOLD' ? 'Hold' : side);
@@ -741,8 +914,10 @@ async function waitForApproval() {
 }
 
 function setAuth(ok) {
-  $('login').innerHTML = ok ? `<span class="up" style="display:inline-flex">${icon('check')}</span>Thndr` : `${icon('login')}Log in to Thndr`;
-  $('login').className = ok ? '' : 'primary';
+  $('login').innerHTML = ok ? `<span class="up" style="display:inline-flex">${icon('check')}</span><span>Thndr connected</span>` : `${icon('login')}<span>Log in to Thndr</span>`;
+  $('login').className = ok ? 'mi' : 'mi warn';
+  $('prof-dot').hidden = ok;
+  $('prof-status').textContent = ok ? 'Thndr connected' : 'Not logged in';
 }
 
 async function openLogin() {
@@ -1397,6 +1572,7 @@ $('notif').addEventListener('click', (e) => {
 document.addEventListener('click', () => closeNotif());
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNotif(); });
 
+$('notif-set').onclick = () => openNotifSettings();
 async function openNotifSettings() {
   $('dlg-title').textContent = 'Notifications';
   view = 'notify'; msg();
@@ -1471,7 +1647,7 @@ function suggItem(x, kind) {
       <div style="text-align:right"><b class="num">${fmt(x.price)}</b><div class="${(x.change ?? 0) >= 0 ? 'up' : 'down'}" style="font-size:12px">${x.change == null ? '' : (x.change >= 0 ? '+' : '') + fmt(x.change) + '%'}</div></div>
       <span class="pill ${tier[0]}" title="Score ${fmt(x.score, 1)}">${tier[1]} · ${fmt(x.score, 1)}</span></div>
     ${planLine}
-    <ul class="sreasons">${x.reasons.map((r) => `<li class="${r.ok ? 'ok' : 'no'}">${icon(r.ok ? 'check' : 'x')}${esc(r.text)}</li>`).join('')}</ul>
+    <ul class="sreasons">${x.reasons.map((r) => `<li class="${r.ok ? 'ok' : 'no'}">${icon(r.ok ? 'check' : 'x')}<span>${esc(trText(r.text))}</span></li>`).join('')}</ul>
     ${x.news ? `<div class="snews">${icon('activity')}${x.news.link ? `<a href="${esc(x.news.link)}" target="_blank" rel="noopener noreferrer">${esc(x.news.title)}</a>` : esc(x.news.title)} <span class="muted">· ${esc(new Date(x.news.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }))}</span></div>` : ''}
     <div class="sbtns">${x.watching ? `<button data-sopen="${esc(x.sym)}">${icon('activity')}Open</button>` : `<button class="primary" data-sadd="${esc(x.sym)}">${icon('plus')}Add to watchlist</button>`}</div>
   </div>`;
