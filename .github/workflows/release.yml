@@ -40,7 +40,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
-      - run: echo "C:/Program Files (x86)/NSIS" >> "$GITHUB_PATH"
+      - name: Install NSIS (installer compiler)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) { choco install nsis -y --no-progress }
+          'C:\Program Files (x86)\NSIS' | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
       - run: packaging/build-win.sh "${VERSION#v}"
       - name: Smoke test the bundled app on Windows (no login)
         run: |
