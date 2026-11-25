@@ -25,7 +25,7 @@ jobs:
           dpkg-deb -x dist/*.deb pkg && A=$PWD/pkg/opt/thndr-radar && mkdir data
           env -i HOME=$HOME PATH=/usr/bin:/bin RADAR_DATA=$PWD/data "$A/node/bin/node" "$A/app.mjs" > app.log 2>&1 &
           for i in $(seq 40); do curl -sf http://127.0.0.1:7777/api/state > /dev/null && break; sleep 0.5; done
-          curl -sf http://127.0.0.1:7777/ | grep -q '<title>'
+          curl -sf -o page.html http://127.0.0.1:7777/ && grep -q '<title>' page.html
           curl -sf -X POST -H 'content-type: application/json' -d '{"step":"status"}' http://127.0.0.1:7777/api/login | tee status.json
           grep -q '"authenticated":false' status.json   # proves the bundled thndr CLI runs
           test -f data/config.json
@@ -52,7 +52,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/data"
           RADAR_DATA="$RUNNER_TEMP/data" build/win/node.exe build/win/app.mjs > app.log 2>&1 &
           for i in $(seq 40); do curl -sf http://127.0.0.1:7777/api/state > /dev/null && break; sleep 0.5; done
-          curl -sf http://127.0.0.1:7777/ | grep -q '<title>'
+          curl -sf -o page.html http://127.0.0.1:7777/ && grep -q '<title>' page.html
           curl -sf -X POST -H 'content-type: application/json' -d '{"step":"status"}' http://127.0.0.1:7777/api/login | tee status.json
           grep -q '"authenticated":false' status.json
           test -f "$RUNNER_TEMP/data/config.json"
