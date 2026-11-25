@@ -7,19 +7,27 @@
 
 ## Screenshots
 
-![Watchlist: signals, RSI, trend and your holdings](docs/screenshots/main.png)
+![Net worth, per-stock profit/loss and the watchlist with signals, RSI and trend](docs/screenshots/main.png)
 
 | Trade plan, chart and key stats | Order book with buyer/seller pressure |
 |---|---|
 | ![Sidebar with trade plan and chart](docs/screenshots/side.png) | ![Order book](docs/screenshots/book.png) |
 | **اشرح: plain-Arabic explanations** | **Per-stock buy/sell alerts** |
 | ![Arabic explanation of the trade plan](docs/screenshots/arabic.png) | ![Alerts dialog](docs/screenshots/alerts.png) |
+| **Dark mode** | |
+| ![Dark mode](docs/screenshots/dark.png) | |
 
-<sub>Personal portfolio details (average prices, holdings) are hidden in these screenshots.</sub>
+<sub>Screenshots use a made-up demo portfolio; no real account data is shown.</sub>
 
 ## Features
 
+- **Net worth card (Thndr-style)**
+  - Net worth in EGP with total return and today's change in green or red, updating live.
+  - Stocks value, invested amount, cash, buying power, and a colour bar of how your portfolio is split.
+  - An eye button blurs all amounts when someone is looking at your screen.
 - **Watchlist**
+  - Company logos from Thndr.
+  - For each stock you own: profit or loss in EGP and %, plus your average price and number of shares.
   - Price, change, RSI(14) with a 30-day sparkline, 50-day average and trend.
   - Prices update live every 5 s while the market is open.
   - Stocks you own sync from Thndr and show your average buy price.
@@ -39,6 +47,7 @@
   - Key stats: open/high/low, volume, P/E, dividend yield, 52-week range.
   - Order book with buyer/seller pressure, plus the latest trades.
   - Your buy history and a hold / average down / take profit / reduce suggestion.
+- **Dark / light mode** toggle in the top bar.
 - **اشرح buttons** explain every section in simple Egyptian Arabic, using the stock's real numbers.
 
 ## Download

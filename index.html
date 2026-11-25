@@ -39,6 +39,7 @@
   body.side-open main, body.side-open footer { margin-right: 600px; }
   /* sidebar open: drop the two least important columns (RSI 30 days, New alert today) so the table fits */
   body.side-open #watch :is(th, td):is(:nth-child(6), :nth-child(9)) { display: none; }
+  body.side-open #watch td:last-child .pill { font-size: 0; gap: 0; padding: 4px 6px; } /* sidebar open: briefcase icon only */
   #rows tr[data-sym] { cursor: pointer; }
   #rows tr[data-sym]:hover td { background: var(--bg); }
   #rows tr.sel td { background: var(--zone); }
@@ -132,9 +133,18 @@
   .logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; }
   .logo i { font-style: normal; font-weight: 700; font-size: 12px; color: var(--muted); }
   aside .head .logo { width: 44px; height: 44px; } aside .head .logo i { font-size: 16px; }
-  .pnl { display: block; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 1px; white-space: nowrap; }
+  /* Price column: big price, then (for stocks you own) a P&L pill and "avg × shares" */
+  .pcell .p { font-size: 15px; font-weight: 700; }
+  .pcell .avgb { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin-top: 4px; }
+  .pnl { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+         padding: 1px 7px 1px 5px; border-radius: 99px; white-space: nowrap; }
+  .pnl.up { background: var(--buy-bg); } .pnl.down { background: var(--sell-bg); }
+  .pnl .ic { width: 12px; height: 12px; }
+  .avgl { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .avgb:hover .avgl { color: var(--accent); }
+  .avgb, .avgb * { text-decoration: none !important; }
   .avgb { display: block; text-align: left; border: 0; background: none; padding: 0; margin-top: 1px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .avgb:hover { color: var(--accent); text-decoration: underline; }
+  .avgb:hover { color: var(--accent); }
   #side-tabs { margin-top: 10px; } #side-tabs:empty { display: none; }
   .rec { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: var(--zone); }
   .rec .ic { width: 20px; height: 20px; margin-top: 1px; }
@@ -326,7 +336,7 @@ function pnlCell(s, r) {
   const p = posOf(s, r.sym);
   if (!p || p.avg == null) return '';
   const pl = (r.price - p.avg) * p.qty, pct = ((r.price - p.avg) / p.avg) * 100, cls = pl >= 0 ? 'up' : 'down';
-  return `<button class="avgb money" data-avg="${esc(r.sym)}" title="${money(p.qty, 0)} shares · avg ${fmt(p.avg)} EGP. Click for all your buys"><span class="pnl ${cls}">${signed(pl)} (${signed(pct)}%)</span>Avg ${fmt(p.avg)}</button>`;
+  return `<button class="avgb money" data-avg="${esc(r.sym)}" title="${money(p.qty, 0)} shares · avg ${fmt(p.avg)} EGP. Click for all your buys"><span class="pnl ${cls}">${icon(pl >= 0 ? 'up' : 'down')}${signed(pl)} · ${signed(pct)}%</span><span class="avgl">Avg ${fmt(p.avg)} × ${money(p.qty, 0)}</span></button>`;
 }
 function renderPortfolio(s) {
   const syms = Object.keys(s.positions || {});
@@ -402,7 +412,7 @@ function render(s) {
     return `<tr data-sym="${esc(sym)}"${sym === sideSym ? ' class="sel"' : ''}>
       <td><div class="symcell">${logo(sym)}<b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></div></td>
       <td style="white-space:normal;min-width:190px"><span class="pill ${esc(r.now.side)}">${esc(r.now.side)}</span><div class="muted" style="font-size:12px">${esc(r.now.why)}</div></td>
-      <td class="num">${fmt(r.price)}${pnlCell(s, r)}</td>
+      <td class="num pcell"><div class="p">${fmt(r.price)}</div>${pnlCell(s, r)}</td>
       <td class="num ${r.change >= 0 ? 'up' : 'down'}">${r.change == null ? '—' : (r.change >= 0 ? '+' : '') + fmt(r.change) + '%'}</td>
       <td><div class="rsi"><b class="num ${zone}">${fmt(r.rsi, 1)}</b>${r.rsi == null ? '' : `<div class="bar"><i style="left:calc(${r.rsi}% - 1px)"></i></div>`}</div></td>
       <td>${spark(r.rsiTrail)}</td>
