@@ -7,17 +7,21 @@
 
 ## Screenshots
 
-![Net worth, per-stock profit/loss and the watchlist with signals, RSI and trend](docs/screenshots/main.png)
+**English · light**: net worth, your stocks first (P&L, average price, advice for your position), then the stocks you watch.
+![Watchlist in English, light mode](docs/screenshots/main.png)
 
-| Trade plan, chart and key stats | Order book with buyer/seller pressure |
+**العربية (من اليمين للشمال)**: the whole app in Arabic, with the layout mirrored.
+![Watchlist in Arabic, right-to-left](docs/screenshots/arabic.png)
+
+| Dark mode + stock sidebar (trade plan, live chart) | Suggestions: short term · مضاربة and long term · استثمار |
 |---|---|
-| ![Sidebar with trade plan and chart](docs/screenshots/side.png) | ![Order book](docs/screenshots/book.png) |
-| **اشرح: plain-Arabic explanations** | **Per-stock buy/sell alerts** |
-| ![Arabic explanation of the trade plan](docs/screenshots/arabic.png) | ![Alerts dialog](docs/screenshots/alerts.png) |
-| **Dark mode** | |
-| ![Dark mode](docs/screenshots/dark.png) | |
+| ![Dark mode with the stock sidebar](docs/screenshots/dark.png) | ![Suggestions tab](docs/screenshots/suggestions.png) |
+| **Suggestions in Arabic · dark** | **Order book with buyer/seller pressure** |
+| ![Suggestions in Arabic, dark mode](docs/screenshots/suggestions-ar-dark.png) | ![Order book](docs/screenshots/book.png) |
+| **اشرح: plain-Arabic explanations with the stock's numbers** | **Profile menu: account, notifications, phone, theme, language** |
+| ![Arabic explanation of the trade plan](docs/screenshots/explain.png) | ![Profile menu](docs/screenshots/menu.png) |
 
-<sub>Screenshots use a made-up demo portfolio; no real account data is shown.</sub>
+<sub>All screenshots use a made-up demo portfolio (holdings, average prices, cash, alerts and history are fake). No real account data is shown.</sub>
 
 ## Features
 
@@ -54,7 +58,16 @@
 - **Sort and filter** the watchlist (my stocks, BUY/SELL, volume spikes; by P&L, RSI, change…).
 - **Net-worth history**, recorded once a day and charted in the card.
 - **Phone access (optional):** open the app on your phone over the same Wi-Fi with a secret QR link. It's off by default, can only be turned on from the computer, and making a new link locks out old ones.
-- **Dark / light mode** toggle in the top bar.
+- **Suggestions tab**: short-term (مضاربة: days to weeks) and long-term (استثمار: months to years) picks.
+  - Built from Thndr's screeners, charts (trend, RSI, volume, breakout, backtest), ThndrX sector ratings, dividends and news.
+  - Each pick shows its entry, stop-loss and target (or buy zone), plus every ✓/✗ reason.
+  - Expert/analyst content (Thndr's paid advisory) is not available to the app.
+- **One answer per stock**: for stocks you own, *Signal now* is the advice for **your position** (Sell / Take profit / Average down / Wait / Hold). It's the same everywhere: the table, the sidebar and the alerts.
+- **Automatic alerts for every stock on the list**, with no setup: the buy zone is reached, the stop-loss is hit, Target 1 is reached, the price is back to your average, or the advice for your position changes.
+- **🔔 Bell** with unread alerts. **Phone push** via the free ntfy app (or Telegram), set up from the app.
+- **Your stocks first** (newest buy on top), then the stocks you watch, in separate sections.
+- **العربية / English** with a full right-to-left layout. Hover over *Signal now*, *RSI* and *Trend* for Arabic explanations.
+- **Dark / light mode** and all settings live in the **profile menu** in the top bar.
 - **اشرح buttons** explain every section in simple Egyptian Arabic, using the stock's real numbers.
 
 ## Download

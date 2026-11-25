@@ -216,7 +216,7 @@
   [dir="rtl"] td.num, [dir="rtl"] .pnl, [dir="rtl"] .chip .money, [dir="rtl"] .nw, [dir="rtl"] .v, [dir="rtl"] .big, [dir="rtl"] .chg, [dir="rtl"] .num { unicode-bidi: isolate; direction: ltr; }
   [dir="rtl"] .shead .up, [dir="rtl"] .shead .down { unicode-bidi: isolate; direction: ltr; text-align: left; }
   [dir="rtl"] .slevels b, [dir="rtl"] .slevels .up, [dir="rtl"] .slevels .down,
-  [dir="rtl"] .lvl .v, [dir="rtl"] .lvl .d, [dir="rtl"] .chip > span:not(.k), [dir="rtl"] td.up, [dir="rtl"] td.down { unicode-bidi: isolate; direction: ltr; display: inline-block; }
+  [dir="rtl"] .lvl .v, [dir="rtl"] .lvl .d, [dir="rtl"] .chip > span:not(.k) { unicode-bidi: isolate; direction: ltr; display: inline-block; }
   [dir="rtl"] aside { right: auto; left: 20px; transform: translateX(calc(-100% - 40px)); }
   [dir="rtl"] body.side-open aside { transform: none; }
   [dir="rtl"] body.side-open main, [dir="rtl"] body.side-open footer { margin-right: 0; margin-left: 600px; }
@@ -542,7 +542,7 @@ function trText(t) {
   const s = String(t), k = s.trim();
   if (AR[k]) return s.replace(k, AR[k]);
   // Numbers inside Arabic sentences are wrapped in left-to-right isolates (U+2066…U+2069) so "+28.7%" stays "+28.7%".
-  const iso = (x) => x.replace(/[\u2066\u2069]/g, '').replace(/([−+\-]?\d[\d.,]*(?:\/\d+)?%?×?(?:\s?[–-]\s?\d[\d.,]*)?)/g, '\u2066$1\u2069');
+  const iso = (x) => x.replace(/[\u2066\u2069]/g, '').replace(/(\d{1,2}:\d{2}(?::\d{2})?\s?[AP]M|[−+\-]?\d[\d.,]*(?:\/\d+)?%?×?(?:\s?[–-]\s?\d[\d.,]*)?)/g, '\u2066$1\u2069');
   for (const [rx, fn] of AR_RX) { const m = k.match(rx); if (m) return s.replace(k, iso(fn(...m))); }
   return s;
 }
