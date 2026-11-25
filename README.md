@@ -5,6 +5,18 @@
 > ⚠️ **Unofficial.** Not affiliated with or endorsed by Thndr. It uses the community [thndr-mcp](https://github.com/armaaar/thndr-mcp) CLI, which talks to Thndr's private web API and may break at any time. Using an unofficial client may breach your broker's terms.
 > **Not financial advice.** Every signal and level comes from simple, transparent rules over recent prices. Nothing here is a prediction. Check everything in the official app before acting.
 
+## Screenshots
+
+![Watchlist: signals, RSI, trend and your holdings](docs/screenshots/main.png)
+
+| Trade plan, chart and key stats | Order book with buyer/seller pressure |
+|---|---|
+| ![Sidebar with trade plan and chart](docs/screenshots/side.png) | ![Order book](docs/screenshots/book.png) |
+| **اشرح: plain-Arabic explanations** | **Per-stock buy/sell alerts** |
+| ![Arabic explanation of the trade plan](docs/screenshots/arabic.png) | ![Alerts dialog](docs/screenshots/alerts.png) |
+
+<sub>Personal portfolio details (average prices, holdings) are hidden in these screenshots.</sub>
+
 ## Features
 
 - **Watchlist**
