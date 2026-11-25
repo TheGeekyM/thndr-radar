@@ -14,8 +14,8 @@ SetCompressor /SOLID lzma
 !include "MUI2.nsh"
 !define MUI_ICON "..\icon.ico"
 !define MUI_UNICON "..\icon.ico"
-!define MUI_FINISHPAGE_RUN "$WINDIR\System32\wscript.exe"
-!define MUI_FINISHPAGE_RUN_PARAMETERS '"$INSTDIR\ThndrRadar.vbs"'
+!define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_FUNCTION LaunchApp
 !define MUI_FINISHPAGE_RUN_TEXT "Start ${APP}"
 !insertmacro MUI_PAGE_LICENSE "..\..\LICENSE"
 !insertmacro MUI_PAGE_DIRECTORY
@@ -24,6 +24,10 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
+
+Function LaunchApp
+  Exec '"$WINDIR\System32\wscript.exe" "$INSTDIR\ThndrRadar.vbs"'
+FunctionEnd
 
 Section "Install"
   SetOutPath "$INSTDIR"
