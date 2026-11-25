@@ -501,7 +501,9 @@ async function chart(sym, range) {
 // `node app.mjs --open` (Windows shortcut, launchers) also opens the app window: Edge/Chrome in app mode, else the browser.
 function openWindow() {
   if (!process.argv.includes('--open')) return;
-  const url = `http://127.0.0.1:${PORT}`, args = [`--app=${url}`, '--window-size=1440,860'];
+  // Own browser profile = own process/window class, so the app shows as its own app (dock/taskbar), not as Chrome/Edge.
+  const profile = join(process.env.RADAR_DATA || (process.platform === 'win32' ? process.env.APPDATA ?? '.' : join(process.env.HOME ?? '.', '.config', 'thndr-radar')), 'browser');
+  const url = `http://127.0.0.1:${PORT}`, args = [`--app=${url}`, '--class=ThndrRadar', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--window-size=1440,860'];
   const win = [process.env['ProgramFiles(x86)'], process.env.ProgramFiles, process.env.LOCALAPPDATA].filter(Boolean)
     .flatMap((d) => [join(d, 'Microsoft/Edge/Application/msedge.exe'), join(d, 'Google/Chrome/Application/chrome.exe')]);
   const nix = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium'];

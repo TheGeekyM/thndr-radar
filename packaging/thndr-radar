@@ -14,5 +14,5 @@ if ! curl -sf "$URL/api/state" >/dev/null; then
   i=0; while [ $i -lt 40 ] && ! curl -sf "$URL/api/state" >/dev/null; do sleep 0.25; i=$((i+1)); done
 fi
 BROWSER="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || command -v microsoft-edge)"
-if [ -n "$BROWSER" ]; then exec "$BROWSER" --app="$URL" --class=ThndrRadar --window-size=1440,860; fi
+if [ -n "$BROWSER" ]; then exec "$BROWSER" --app="$URL" --class=ThndrRadar --user-data-dir="$DATA/chrome" --no-first-run --no-default-browser-check --window-size=1440,860; fi
 exec xdg-open "$URL"

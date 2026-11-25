@@ -11,7 +11,8 @@ if ! curl -sf http://127.0.0.1:7777/api/state >/dev/null; then
 fi
 BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
 if [ -n "$BROWSER" ]; then
-  exec "$BROWSER" --app=http://127.0.0.1:7777 --class=ThndrRadar --window-size=1440,860
+  # Own Chrome profile = own process, so the window gets class ThndrRadar (own dock icon) even if Chrome is already open.
+  exec "$BROWSER" --app=http://127.0.0.1:7777 --class=ThndrRadar --user-data-dir="${XDG_CONFIG_HOME:-$HOME/.config}/thndr-radar/chrome" --no-first-run --no-default-browser-check --window-size=1440,860
 else
   xdg-open http://127.0.0.1:7777
 fi
