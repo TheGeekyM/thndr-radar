@@ -7,3 +7,5 @@ vendor/
 # local backups
 *.bak*
 node_modules/
+dist/
+build/

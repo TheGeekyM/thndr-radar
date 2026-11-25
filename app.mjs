@@ -2,18 +2,27 @@
 // EGX Alerts desktop app: local server (127.0.0.1 only) + Chrome app window (see start.sh).
 // Checks every 15 min during EGX hours, pops a desktop notification (and Telegram if configured) on new signals.
 import http from 'node:http';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { existsSync, mkdirSync } from 'node:fs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { advise, analyze, history, RULE_TYPES, ruleHit, ruleText, telegram, thndr } from './alerts.mjs';
 
 // ponytail: reuse the QR library thndr-mcp already ships instead of adding our own dependency.
+// Defaults so a packaged app needs no env vars: bundled thndr CLI, and on Windows data in %APPDATA%\ThndrRadar.
+process.env.THNDR_BIN ||= (() => { const p = new URL('./vendor/thndr-mcp/dist/thndr.js', import.meta.url).pathname; const f = process.platform === 'win32' ? decodeURIComponent(p.slice(1)) : decodeURIComponent(p); return existsSync(f) ? f : 'thndr'; })();
+if (process.platform === 'win32' && !process.env.RADAR_DATA && process.env.APPDATA) process.env.RADAR_DATA = join(process.env.APPDATA, 'ThndrRadar');
+if (process.env.RADAR_DATA) mkdirSync(process.env.RADAR_DATA, { recursive: true });
+
 const QRCode = createRequire(new URL('./vendor/thndr-mcp/package.json', import.meta.url))('qrcode');
 
 const PORT = 7777;
 const file = (name) => new URL(`./${name}`, import.meta.url);
-const readJson = (name, fallback) => { try { return JSON.parse(readFileSync(file(name), 'utf8')); } catch { return fallback; } };
-const saveJson = (name, data) => writeFileSync(file(name), JSON.stringify(data, null, 2));
+// Your data (config, alert log) lives in RADAR_DATA when set (installed app: ~/.config/thndr-radar), else next to the app.
+const dataFile = (name) => (process.env.RADAR_DATA ? join(process.env.RADAR_DATA, name) : file(name));
+const readJson = (name, fallback) => { try { return JSON.parse(readFileSync(dataFile(name), 'utf8')); } catch { return fallback; } };
+const saveJson = (name, data) => writeFileSync(dataFile(name), JSON.stringify(data, null, 2));
 
 const config = { symbols: ['COMI'], telegramToken: '', telegramChat: '', rules: {}, ...readJson('config.json', {}) };
 saveJson('config.json', config);
@@ -33,8 +42,19 @@ function cairo(now = new Date()) {
   };
 }
 
+// Windows toast: text goes in env vars (never into the script) so stock names can't inject PowerShell.
+const WIN_TOAST = `$x=[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);
+$t=$x.GetElementsByTagName('text');$t.Item(0).AppendChild($x.CreateTextNode($env:RADAR_T))>$null;$t.Item(1).AppendChild($x.CreateTextNode($env:RADAR_B))>$null;
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe').Show([Windows.UI.Notifications.ToastNotification]::new($x))`;
+
 function notify(title, body) {
-  execFile('notify-send', ['-a', 'EGX Alerts', '-u', 'critical', title, body], () => {});
+  if (process.platform === 'win32') {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', WIN_TOAST], { env: { ...process.env, RADAR_T: title, RADAR_B: body }, windowsHide: true }, () => {});
+  } else if (process.platform === 'darwin') {
+    execFile('osascript', ['-e', 'on run a\ndisplay notification (item 2 of a) with title (item 1 of a)\nend run', title, body], () => {});
+  } else {
+    execFile('notify-send', ['-a', 'Thndr Radar', '-u', 'critical', title, body], () => {});
+  }
   if (config.telegramToken && config.telegramChat) {
     telegram(config.telegramToken, config.telegramChat, `${title}\n${body}`).catch((e) => console.error(e.message));
   }
@@ -144,6 +164,20 @@ async function chart(sym, range) {
   const data = { sym, range, points: pts, base };
   chartCache.set(key, { at: Date.now(), data });
   return data;
+}
+
+// `node app.mjs --open` (Windows shortcut, launchers) also opens the app window: Edge/Chrome in app mode, else the browser.
+function openWindow() {
+  if (!process.argv.includes('--open')) return;
+  const url = `http://127.0.0.1:${PORT}`, args = [`--app=${url}`, '--window-size=1440,860'];
+  const win = [process.env['ProgramFiles(x86)'], process.env.ProgramFiles, process.env.LOCALAPPDATA].filter(Boolean)
+    .flatMap((d) => [join(d, 'Microsoft/Edge/Application/msedge.exe'), join(d, 'Google/Chrome/Application/chrome.exe')]);
+  const nix = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium'];
+  const browser = (process.platform === 'win32' ? win : nix).find((p) => existsSync(p));
+  const run = (cmd, a) => spawn(cmd, a, { detached: true, stdio: 'ignore', windowsHide: false }).on('error', () => {}).unref();
+  if (browser) run(browser, args);
+  else if (process.platform === 'win32') run('cmd', ['/c', 'start', '', url]);
+  else run(process.platform === 'darwin' ? 'open' : 'xdg-open', [url]);
 }
 
 const SYMBOL = /^[A-Z0-9.]{1,12}$/; // passed to the thndr CLI, so keep it strict
@@ -293,9 +327,10 @@ http.createServer(async (req, res) => {
     json({ error: 'Not found' }, 404);
   } catch (e) { json({ error: e.message }, 500); }
 }).on('error', (e) => {
-  if (e.code === 'EADDRINUSE') { console.log('Already running'); process.exit(0); }
+  if (e.code === 'EADDRINUSE') { console.log('Already running'); openWindow(); setTimeout(() => process.exit(0), 500); return; }
   throw e;
 }).listen(PORT, '127.0.0.1', () => {
+  openWindow();
   console.log(`EGX Alerts on http://127.0.0.1:${PORT}`);
   run();
   setInterval(() => { if (cairo().open) run(); }, 15 * 60 * 1000);

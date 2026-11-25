@@ -146,7 +146,9 @@ export const ruleText = (r) => `${RULE_TYPES[r.type]} ${r.value}`;
 /** Runs a thndr CLI command and returns its JSON; failures throw Error(Thndr's message), with .code like NOT_AUTHENTICATED. */
 export async function thndr(args) {
   try {
-    const { stdout } = await promisify(execFile)(process.env.THNDR_BIN || 'thndr', [...args, '--json'], { timeout: 120_000 });
+    // A .js CLI path is run with this same Node binary (no system `node` needed, works for the packaged app too).
+    const bin = process.env.THNDR_BIN || 'thndr', js = bin.endsWith('.js');
+    const { stdout } = await promisify(execFile)(js ? process.execPath : bin, [...(js ? [bin] : []), ...args, '--json'], { timeout: 120_000 });
     return JSON.parse(stdout);
   } catch (e) {
     let err;

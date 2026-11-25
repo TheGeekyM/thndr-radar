@@ -1,0 +1,81 @@
+# Builds the Ubuntu .deb and the Windows installer .exe, smoke-tests each on its own OS, and publishes a GitHub
+# release when a tag like v0.1.0 is pushed. (Run manually from the Actions tab to just build + test.)
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+env:
+  VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.0.0-dev' }}
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node alerts.mjs --test
+      - run: packaging/build-deb.sh "${VERSION#v}"
+      - name: Smoke test the packaged app (bundled node, no login)
+        run: |
+          set -e
+          dpkg-deb -x dist/*.deb pkg && A=$PWD/pkg/opt/thndr-radar && mkdir data
+          env -i HOME=$HOME PATH=/usr/bin:/bin RADAR_DATA=$PWD/data "$A/node/bin/node" "$A/app.mjs" > app.log 2>&1 &
+          for i in $(seq 40); do curl -sf http://127.0.0.1:7777/api/state > /dev/null && break; sleep 0.5; done
+          curl -sf http://127.0.0.1:7777/ | grep -q '<title>'
+          curl -sf -X POST -H 'content-type: application/json' -d '{"step":"status"}' http://127.0.0.1:7777/api/login | tee status.json
+          grep -q '"authenticated":false' status.json   # proves the bundled thndr CLI runs
+          test -f data/config.json
+          cat app.log
+      - uses: actions/upload-artifact@v4
+        with: { name: deb, path: dist/*.deb }
+
+  windows:
+    runs-on: windows-latest
+    defaults: { run: { shell: bash } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: echo "C:/Program Files (x86)/NSIS" >> "$GITHUB_PATH"
+      - run: packaging/build-win.sh "${VERSION#v}"
+      - name: Smoke test the bundled app on Windows (no login)
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/data"
+          RADAR_DATA="$RUNNER_TEMP/data" build/win/node.exe build/win/app.mjs > app.log 2>&1 &
+          for i in $(seq 40); do curl -sf http://127.0.0.1:7777/api/state > /dev/null && break; sleep 0.5; done
+          curl -sf http://127.0.0.1:7777/ | grep -q '<title>'
+          curl -sf -X POST -H 'content-type: application/json' -d '{"step":"status"}' http://127.0.0.1:7777/api/login | tee status.json
+          grep -q '"authenticated":false' status.json
+          test -f "$RUNNER_TEMP/data/config.json"
+          cat app.log
+      - name: Silent install test
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist\ThndrRadar-Setup-*.exe | Select-Object -First 1
+          Start-Process $exe.FullName -ArgumentList '/S' -Wait
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\ThndrRadar\app.mjs")) { throw 'not installed' }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Thndr Radar.lnk")) { throw 'no shortcut' }
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: dist/*.exe }
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [deb, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          cd dist && sha256sum * > SHA256SUMS.txt
+          gh release create "$VERSION" * --repo "$GITHUB_REPOSITORY" --title "Thndr Radar $VERSION" --notes "Unofficial desktop radar for EGX stocks on Thndr.
+
+          **Ubuntu/Debian:** download the .deb, then \`sudo apt install ./thndr-radar_*_amd64.deb\` and open *Thndr Radar* from the app menu.
+          **Windows 10/11:** run ThndrRadar-Setup-*.exe (no admin needed). It is not code-signed, so SmartScreen may warn: click *More info* then *Run anyway*.
+
+          Then click **Log in to Thndr** in the app. Node.js and the thndr CLI are bundled. Not affiliated with Thndr, not financial advice."

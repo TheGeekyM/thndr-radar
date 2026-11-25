@@ -1,0 +1,18 @@
+#!/bin/sh
+# Thndr Radar launcher (installed by the .deb): starts the local server if needed, then opens the app window.
+APP=/opt/thndr-radar
+DATA="${XDG_CONFIG_HOME:-$HOME/.config}/thndr-radar"
+mkdir -p "$DATA"
+export RADAR_DATA="$DATA" THNDR_BIN="$APP/vendor/thndr-mcp/dist/thndr.js"
+URL=http://127.0.0.1:7777
+if [ "$1" = "--stop" ]; then
+  curl -sf "$URL/api/state" >/dev/null && kill $(ss -ltnp 'sport = :7777' | grep -o 'pid=[0-9]*' | cut -d= -f2) && echo "Stopped."
+  exit 0
+fi
+if ! curl -sf "$URL/api/state" >/dev/null; then
+  nohup "$APP/node/bin/node" "$APP/app.mjs" >>"$DATA/app.log" 2>&1 &
+  i=0; while [ $i -lt 40 ] && ! curl -sf "$URL/api/state" >/dev/null; do sleep 0.25; i=$((i+1)); done
+fi
+BROWSER="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || command -v microsoft-edge)"
+if [ -n "$BROWSER" ]; then exec "$BROWSER" --app="$URL" --class=ThndrRadar --window-size=1440,860; fi
+exec xdg-open "$URL"

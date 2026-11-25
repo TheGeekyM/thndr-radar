@@ -29,13 +29,24 @@
   - Your buy history and a hold / average down / take profit / reduce suggestion.
 - **اشرح buttons** explain every section in simple Egyptian Arabic, using the stock's real numbers.
 
-## Requirements
+## Download
+
+Get the latest installers from **[Releases](https://github.com/TheGeekyM/thndr-radar/releases/latest)**. Node.js and the thndr CLI are bundled.
+
+- **Ubuntu / Debian:** `sudo apt install ./thndr-radar_*_amd64.deb`, then open **Thndr Radar** from the app menu. Stop the background server with `thndr-radar --stop`.
+- **Windows 10/11:** run `ThndrRadar-Setup-*.exe`. No admin rights are needed, and it adds Start-menu and desktop shortcuts. The installer isn't code-signed, so SmartScreen may warn you: click *More info*, then *Run anyway*.
+
+Your data is stored in `~/.config/thndr-radar` (Linux) or `%APPDATA%\ThndrRadar` (Windows).
+
+## Run from source
+
+### Requirements
 
 - Linux desktop (tested on GNOME), with Google Chrome or Chromium for the app window
 - Node.js 20+, git
 - A Thndr account. The underlying ThndrX web platform requires a *Thndr Trader* subscription.
 
-## Setup
+### Setup
 
 ```sh
 git clone https://github.com/TheGeekyM/thndr-radar
@@ -56,7 +67,7 @@ The server keeps running after you close the window, so alerts keep coming. Stop
 kill $(ss -ltnp 'sport = :7777' | grep -o 'pid=[0-9]*' | cut -d= -f2)
 ```
 
-### Telegram (optional)
+## Telegram (optional)
 
 Put your bot token and chat id in `config.json` (created on first run):
 
@@ -71,7 +82,8 @@ Put your bot token and chat id in `config.json` (created on first run):
 | `alerts.mjs` | Indicators (RSI, SMA, support/resistance), signals, trade plan and advice rules. Self-test: `node alerts.mjs --test` |
 | `app.mjs` | Local server on `127.0.0.1:7777`: scheduler, notifications, Thndr calls through the CLI, JSON API |
 | `index.html` | The whole UI, one file with no frameworks and no build step |
-| `start.sh` / `setup.sh` | Launcher and one-time setup |
+| `start.sh` / `setup.sh` | Launcher and one-time setup (from source) |
+| `packaging/` | `.deb` and Windows installer builds; `.github/workflows/release.yml` builds, tests and publishes both on every `v*` tag |
 
 - Full refresh runs every 15 min during EGX hours (Sun–Thu 10:00–15:00 Cairo).
 - Live prices, the order book and trades are fetched only while the window is open.
