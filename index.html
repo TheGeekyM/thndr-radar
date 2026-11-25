@@ -1471,6 +1471,8 @@ function renderSugg() {
   const r = $('sugg-refresh'); if (r) r.onclick = () => loadSugg(true);
 }
 $('suggsec').addEventListener('click', async (e) => {
+  const help = e.target.closest('[data-help]')?.dataset.help;
+  if (help) { helpOpen.has(help) ? helpOpen.delete(help) : helpOpen.add(help); renderSugg(); return; }
   const add = e.target.closest('[data-sadd]')?.dataset.sadd, open = e.target.closest('[data-sopen]')?.dataset.sopen;
   if (add) {
     const b = e.target.closest('button'); b.disabled = true; b.innerHTML = `${icon('refresh')}Adding…`;
