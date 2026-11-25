@@ -153,6 +153,24 @@
   .div-row:last-child, .news-row:last-child { border-bottom: 0; }
   .news-row a { color: var(--text); text-decoration: none; font-weight: 600; }
   .news-row a:hover { color: var(--accent); }
+  .views { justify-self: start; }
+  .views button { padding: 7px 14px; font-size: 13px; }
+  .sgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 1100px) { .sgrid { grid-template-columns: 1fr; } }
+  .scol h2 { margin-bottom: 12px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .scard { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; background: var(--panel); }
+  .scard .shead { display: flex; align-items: center; gap: 10px; }
+  .scard .sname { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slevels { display: flex; gap: 18px; flex-wrap: wrap; margin: 12px 0 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .slevels .k { display: block; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .sreasons { list-style: none; margin: 6px 0; padding: 0; font-size: 12.5px; }
+  .sreasons li { display: flex; gap: 6px; align-items: flex-start; padding: 2px 0; }
+  .sreasons li .ic { width: 14px; height: 14px; margin-top: 2px; flex: none; }
+  .sreasons li.ok .ic { color: var(--buy); } .sreasons li.no { color: var(--muted); } .sreasons li.no .ic { color: var(--sell); }
+  .snews { font-size: 12.5px; margin-top: 8px; display: flex; gap: 6px; align-items: flex-start; }
+  .snews a { color: var(--text); text-decoration: none; } .snews a:hover { color: var(--accent); }
+  .snews .ic { width: 14px; height: 14px; margin-top: 2px; flex: none; color: var(--muted); }
+  .sbtns { margin-top: 10px; display: flex; gap: 8px; }
   /* Net-worth card (Thndr-style) */
   .pf { display: grid; grid-template-columns: minmax(260px, 1.2fr) 2fr; gap: 24px; align-items: center; }
   .pf .lbl { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
@@ -271,7 +289,9 @@
 <div class="banner" id="banner" hidden><span data-icon="alert"></span><span class="msg" id="banner-msg"></span><button class="primary" id="banner-login">Log in to Thndr</button></div>
 <main>
   <section id="pf"></section>
-  <section>
+  <div class="seg views" id="views"></div>
+  <section id="suggsec" hidden></section>
+  <section id="watchsec">
     <h2>Watchlist</h2>
     <div class="toolbar">
       <form id="add" style="align-items:center"><input id="sym" placeholder="e.g. HRHO" maxlength="12" required><button id="addbtn"><span data-icon="plus"></span>Add</button><span id="add-err" class="err"></span></form>
@@ -287,7 +307,7 @@
       <tbody id="rows"></tbody>
     </table>
   </section>
-  <section>
+  <section id="logsec">
     <h2>Alerts log</h2>
     <table id="logtable">
       <thead><tr><th>Time</th><th>Symbol</th><th>Signal</th><th>Price</th><th>Reason</th></tr></thead>
@@ -422,6 +442,11 @@ function rsiTipAr(r) {
   return `مؤشر القوة النسبية RSI = ${v}: بيقيس سرعة صعود ونزول السعر في آخر 14 يوم، من 0 لـ 100. تحت 30 = متشبع بيع (نزل كتير)، فوق 70 = متشبع شراء (طلع كتير). ${now}`;
 }
 
+// "You're up 3.2%" in green, "You're down 15.9%" in red (text is escaped first, then wrapped).
+const colorPct = (t) => esc(t)
+  .replace(/(You(?:&#39;|')re up [\d.,]+%)/g, '<b class="up">$1</b>')
+  .replace(/(You(?:&#39;|')re down [\d.,]+%)/g, '<b class="down">$1</b>');
+
 const pillCls = (side) => (['BUY', 'SELL', 'INFO', 'WAIT', 'HOLD'].includes(side) ? side : 'SELL');
 const pillTxt = (side) => (side === 'INFO' ? 'Info' : side === 'WAIT' ? 'Wait' : side === 'HOLD' ? 'Hold' : side);
 
@@ -526,7 +551,7 @@ function render(s) {
     const zone = r.rsi == null ? '' : r.rsi < 30 ? 'up' : r.rsi > 70 ? 'down' : '';
     return `<tr data-sym="${esc(sym)}"${sym === sideSym ? ' class="sel"' : ''}>
       <td><div class="symcell">${logo(sym)}<b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></div></td>
-      <td style="white-space:normal;min-width:190px" title="${esc(signalTipAr(s, r))}">${(() => { const g = signalOf(s, r); return `<span class="pill ${g.cls}">${esc(g.label)}</span>${g.mine ? '<span class="mine">your position</span>' : ''}<div class="muted" style="font-size:12px">${esc(g.why)}</div>`; })()}</td>
+      <td style="white-space:normal;min-width:190px" title="${esc(signalTipAr(s, r))}">${(() => { const g = signalOf(s, r); return `<span class="pill ${g.cls}">${esc(g.label)}</span>${g.mine ? '<span class="mine">your position</span>' : ''}<div class="muted" style="font-size:12px">${colorPct(g.why)}</div>`; })()}</td>
       <td class="num pcell"><div class="p">${fmt(r.price)}</div>${pnlCell(s, r)}</td>
       <td class="num ${r.change >= 0 ? 'up' : 'down'}">${r.change == null ? '—' : (r.change >= 0 ? '+' : '') + fmt(r.change) + '%'}${r.volRatio >= 1.5 ? `<span class="vol" title="Volume today is ${fmt(r.volRatio, 1)}× the 30-day average: unusual interest">Vol ${fmt(r.volRatio, 1)}×</span>` : ''}</td>
       <td title="${esc(rsiTipAr(r))}"><div class="rsi"><b class="num ${zone}">${fmt(r.rsi, 1)}</b>${r.rsi == null ? '' : `<div class="bar"><i style="left:calc(${r.rsi}% - 1px)"></i></div>`}</div></td>
@@ -549,7 +574,7 @@ function render(s) {
       <td><b>${esc(e.sym)}</b></td>
       <td><span class="pill ${pillCls(e.side)}">${esc(pillTxt(e.side))}</span></td>
       <td class="num">${fmt(e.price)}</td>
-      <td style="white-space:normal">${esc(e.why)}</td></tr>`).join('')
+      <td style="white-space:normal">${colorPct(e.why)}</td></tr>`).join('')
     || '<tr><td colspan="5" class="muted">No alerts yet. They appear here and as desktop notifications.</td></tr>';
 }
 
@@ -1331,7 +1356,7 @@ function renderNotif() {
       <button class="x" id="n-settings" title="Notification settings">${icon('gear')}</button></div>
     <div class="nlist">${items.map((e) => `<button class="nitem${e.time > notifSeen ? ' new' : ''}" data-nsym="${esc(e.sym)}">
         <div class="nrow">${pill(e)}<b>${esc(e.sym)}</b>${e.price != null ? `<span class="muted">@ ${fmt(e.price)}</span>` : ''}<span class="spacer"></span><span class="muted" style="font-size:11px">${ago(e.time)}</span></div>
-        <div class="nwhy">${esc(e.why)}</div></button>`).join('') || '<p class="muted" style="padding:14px">No alerts yet.</p>'}</div>
+        <div class="nwhy">${colorPct(e.why)}</div></button>`).join('') || '<p class="muted" style="padding:14px">No alerts yet.</p>'}</div>
     <div class="nfoot">${icon('phone')}Phone push: <b>${last?.push ? 'on' : 'off'}</b><span class="spacer"></span><button class="link" id="n-setup">${last?.push ? 'Settings' : 'Set up'}</button></div>`;
   $('n-read').onclick = markRead;
   $('n-settings').onclick = $('n-setup').onclick = () => { closeNotif(); openNotifSettings(); };
@@ -1396,6 +1421,74 @@ async function openNotifSettings() {
   try { const r = await fetch('/api/settings'); const j = await r.json(); if (!r.ok) throw new Error(j.error); paint(j); }
   catch (e) { $('dlg-body').innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
 }
+
+// ---- Suggestions tab: short-term (مضاربة) and long-term picks (rule-based screening, not advice) ----
+let mainView = 'watch', suggData = null, suggTimer = null;
+try { mainView = localStorage.getItem('mainView') || 'watch'; } catch {}
+function renderViews() {
+  $('views').innerHTML = `<button data-v="watch" class="${mainView === 'watch' ? 'on' : ''}">${icon('activity')}Watchlist</button><button data-v="sugg" class="${mainView === 'sugg' ? 'on' : ''}">${icon('up')}Suggestions</button>`;
+  $('watchsec').hidden = $('logsec').hidden = mainView !== 'watch';
+  $('suggsec').hidden = mainView !== 'sugg';
+  if (mainView === 'sugg') loadSugg();
+}
+$('views').onclick = (e) => { const v = e.target.closest('[data-v]')?.dataset.v; if (v && v !== mainView) { mainView = v; try { localStorage.setItem('mainView', v); } catch {} renderViews(); } };
+async function loadSugg(refresh) {
+  clearTimeout(suggTimer);
+  try { suggData = await getJson('/api/suggestions' + (refresh ? '?refresh=1' : '')); } catch (e) { suggData = { error: e.message }; }
+  renderSugg();
+  if (suggData?.building && mainView === 'sugg') suggTimer = setTimeout(() => loadSugg(), 5000);
+}
+function suggItem(x, kind) {
+  const tier = kind === 'short' ? (x.score >= 5 ? ['BUY', 'Strong'] : x.score >= 3 ? ['HOLD', 'Good'] : ['WAIT', 'Watch']) : (x.score >= 6 ? ['BUY', 'Strong'] : x.score >= 4 ? ['HOLD', 'Good'] : ['WAIT', 'Watch']);
+  const pct = (v) => `<span class="${v >= x.price ? 'up' : 'down'}">${v >= x.price ? '+' : ''}${fmt(((v - x.price) / x.price) * 100, 1)}%</span>`;
+  const u = suggData.logos?.[x.sym];
+  const lg = `<span class="logo">${u ? `<img src="${esc(u)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<i>${esc(x.sym[0])}</i></span>`;
+  const planLine = kind === 'short'
+    ? `<div class="slevels"><span><span class="k">${x.pullback ? 'Wait for pullback to' : x.breakout ? 'Entry (breakout)' : 'Entry'}</span><b class="up">${fmt(x.entry.lo)}–${fmt(x.entry.hi)}</b></span><span><span class="k">Stop-loss</span><b class="down">${fmt(x.stop)}</b> ${pct(x.stop)}</span><span><span class="k">Target</span><b style="color:var(--accent)">${fmt(x.target)}</b> ${pct(x.target)}</span></div>`
+    : `<div class="slevels"><span><span class="k">Buy zone</span>${x.buyZone ? `<b class="up">${fmt(x.buyZone.lo)}–${fmt(x.buyZone.hi)}</b>` : '<span class="muted">none yet (new lows)</span>'}</span><span><span class="k">Dividend</span><b>${x.dividendYield == null ? '—' : fmt(x.dividendYield, 1) + '%'}</b></span><span><span class="k">1 year</span><b class="${(x.perf1y ?? 0) >= 0 ? 'up' : 'down'}">${x.perf1y == null ? '—' : (x.perf1y >= 0 ? '+' : '') + fmt(x.perf1y, 1) + '%'}</b></span></div>`;
+  return `<div class="scard">
+    <div class="shead">${lg}<div style="flex:1;min-width:0"><b>${esc(x.sym)}</b> ${x.held ? '<span class="pill HOLD">You own it</span>' : ''}<div class="muted sname">${esc(x.name ?? '')}${x.sector ? ' · ' + esc(x.sector) : ''}</div></div>
+      <div style="text-align:right"><b class="num">${fmt(x.price)}</b><div class="${(x.change ?? 0) >= 0 ? 'up' : 'down'}" style="font-size:12px">${x.change == null ? '' : (x.change >= 0 ? '+' : '') + fmt(x.change) + '%'}</div></div>
+      <span class="pill ${tier[0]}" title="Score ${fmt(x.score, 1)}">${tier[1]} · ${fmt(x.score, 1)}</span></div>
+    ${planLine}
+    <ul class="sreasons">${x.reasons.map((r) => `<li class="${r.ok ? 'ok' : 'no'}">${icon(r.ok ? 'check' : 'x')}${esc(r.text)}</li>`).join('')}</ul>
+    ${x.news ? `<div class="snews">${icon('activity')}${x.news.link ? `<a href="${esc(x.news.link)}" target="_blank" rel="noopener noreferrer">${esc(x.news.title)}</a>` : esc(x.news.title)} <span class="muted">· ${esc(new Date(x.news.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }))}</span></div>` : ''}
+    <div class="sbtns">${x.watching ? `<button data-sopen="${esc(x.sym)}">${icon('activity')}Open</button>` : `<button class="primary" data-sadd="${esc(x.sym)}">${icon('plus')}Add to watchlist</button>`}</div>
+  </div>`;
+}
+function renderSugg() {
+  const d = suggData || {};
+  const col = (kind, title, ar, sub) => `<div class="scol"><h2><span>${title} · <span dir="rtl">${ar}</span></span><span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500">${sub}</span></h2>
+    ${(d[kind] || []).map((x) => suggItem(x, kind)).join('') || `<p class="muted">${d.building ? 'Scanning…' : 'No stock passes the rules right now.'}</p>`}</div>`;
+  $('suggsec').innerHTML = `
+    <h2><span>Suggestions</span><span style="display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-weight:500">
+      ${d.building ? `<span class="muted spin" style="display:inline-flex;gap:6px">${icon('refresh')}Scanning the market… (about a minute)</span>` : d.at ? `<span class="muted">Updated ${new Date(d.at).toLocaleTimeString()}${d.scanned ? ` · ${d.scanned.short + d.scanned.long} stocks checked` : ''}</span>` : ''}
+      <button id="sugg-refresh" ${d.building ? 'disabled' : ''}>${icon('refresh')}Rescan</button>${helpBtn('sugg')}</span></h2>
+    ${helpBox('sugg')}
+    ${d.error ? `<p class="err">${esc(d.error)}</p>` : ''}
+    <div class="sgrid">${col('short', 'Short term', 'مضاربة', 'days to a few weeks')}${col('long', 'Long term', 'استثمار', 'months to years')}</div>
+    <p class="muted" style="font-size:11px;margin:14px 0 0">Screening from Thndr's screeners, charts (trend, RSI, volume, backtest), ThndrX sector ratings and dividends. Expert/analyst picks (Thndr's paid advisory) aren't available to this app. Rule-based, not financial advice: always check the stock yourself.</p>`;
+  const r = $('sugg-refresh'); if (r) r.onclick = () => loadSugg(true);
+}
+$('suggsec').addEventListener('click', async (e) => {
+  const add = e.target.closest('[data-sadd]')?.dataset.sadd, open = e.target.closest('[data-sopen]')?.dataset.sopen;
+  if (add) {
+    const b = e.target.closest('button'); b.disabled = true; b.innerHTML = `${icon('refresh')}Adding…`;
+    try {
+      await api('/api/symbols', { add });
+      for (const k of ['short', 'long']) suggData[k]?.forEach((x) => { if (x.sym === add) x.watching = true; });
+      renderSugg(); openSide(add);
+    }
+    catch (er) { b.textContent = er.message; }
+  }
+  if (open) openSide(open);
+});
+HELP.sugg = () => `
+  <p><b>مضاربة (المدى القصير):</b> شراء وبيع خلال أيام لكام أسبوع، عشان تكسب من حركة السعر. البرنامج بيدور على أسهم: السعر فوق متوسطاته (اتجاه صاعد)، حجم تداول عالي (اهتمام)، RSI صحي أو بيرتد من التشبع البيعي، قريب من كسر قمة، ونسبة المخاطرة للعائد كويسة. وبيستبعد الأسهم اللي لسه بتعمل قيعان جديدة، والأسهم اللي تداولها ضعيف (أقل من 2 مليون جنيه في اليوم) عشان تعرف تبيع بسهولة. لكل سهم: سعر الدخول، وقف الخسارة، والهدف.</p>
+  <p><b>استثمار (المدى الطويل):</b> شهور لسنين. البرنامج بيعتمد على تقييم ThndrX للشركة مقارنة بشركات نفس القطاع (الربحية، النمو، رخص السعر، الصحة المالية، الكفاءة)، وعائد التوزيعات، والسعر فوق متوسط 200 يوم، وأداء آخر سنة. الأفضل تشتري على دفعات في منطقة الشراء.</p>
+  <p><b>Score:</b> مجموع النقاط: كل ✓ بتزود وكل ✗ ما بتزودش. <b>Strong</b> = أعلى نقاط، <b>Good</b> = كويس، <b>Watch</b> = تابعه بس.</p>
+  <p class="note">آراء الخبراء (خدمة Thndr المدفوعة) مش متاحة للبرنامج. دي فلترة بقواعد بسيطة، مش نصيحة مالية، وممكن تكون غلط. ادرس السهم بنفسك وما تحطش فلوس مش قد خسارتها.</p>`;
+renderViews();
 
 load();
 // Prices arrive live from Thndr's realtime feed: the server pushes a tick and the page reloads its state.

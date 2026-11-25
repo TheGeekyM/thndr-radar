@@ -170,6 +170,66 @@ export function autoSignals(row, pos) {
   return out;
 }
 
+/**
+ * Suggestions (rule-based screening, not advice). Each returns { score, reasons: [{ ok, text }], ... } or null (excluded).
+ * shortTermScore — مضاربة (days–weeks): trend, volume, momentum/rebound, breakout, risk/reward, backtest; liquid stocks only.
+ * longTermScore  — investment (months–years): ThndrX sector ratings, dividend yield, 200-day trend, 1-year performance.
+ */
+export function shortTermScore(closes, quote, bt) {
+  if (closes.length < 60 || !quote || !(quote.value >= 2_000_000)) return null; // needs liquidity to get in/out
+  const price = quote.last ?? closes.at(-1), c = [...closes.slice(0, -1), price];
+  const sma20 = sma(c, 20), sma50v = sma(c, SMA_LEN), r = rsiSeries(c), rsi = r.at(-1), pl = plan(c);
+  const volRatio = quote.averageVolume30d ? quote.volume / quote.averageVolume30d : null;
+  const reasons = [], add = (ok, pts, text) => { reasons.push({ ok, text }); return ok ? pts : 0; };
+  let score = 0;
+  score += add(price > sma20 && sma20 > sma50v, 2, `Uptrend: price above its 20-day (${r2(sma20)}) and 50-day (${r2(sma50v)}) averages`);
+  score += add(volRatio != null && volRatio >= 1.5, 2, `Volume ${volRatio == null ? '—' : r2(volRatio) + '×'} the 30-day average${volRatio >= 1.5 ? ' (strong interest)' : ''}`);
+  const rebound = r.slice(-4, -1).some((v) => v < 35) && rsi >= 35;
+  if (rebound) score += add(true, 2, `Rebounding: RSI back to ${r2(rsi)} after dipping below 35`);
+  else score += add(rsi >= 50 && rsi <= 68, 1, `RSI ${r2(rsi)} ${rsi > 68 ? '(getting overbought)' : rsi < 50 ? '(weak momentum)' : '(healthy momentum)'}`);
+  if (rsi > 72) score -= 2;
+  const hi60 = Math.max(...c.slice(-61, -1));
+  score += add(price >= hi60 * 0.97, 1, `${price >= hi60 ? 'Breaking out above' : 'Near'} its 60-day high ${r2(hi60)}`);
+  // Entry, stop and target that belong together: buy-zone entry uses the plan's own stop/target; a breakout (or no
+  // zone) enters at the current price with a stop 2 typical moves below and a target at least as far above.
+  const move = pl?.move ?? price * 0.02, hi60b = Math.max(...c.slice(-61, -1)), breakout = price >= hi60b * 0.97 && price > sma20;
+  let entry, stop, target;
+  if (!breakout && pl?.buyLo != null && pl.buyHi < price) {
+    entry = { lo: pl.buyLo, hi: pl.buyHi }; stop = pl.stop; target = pl.t1 ?? r2(pl.buyHi + 3 * move);
+  } else {
+    entry = { lo: r2(price - move / 2), hi: r2(price) }; stop = r2(price - 2 * move);
+    target = pl?.t1 != null && pl.t1 - price >= price - stop ? pl.t1 : r2(price + 2 * (price - stop));
+  }
+  const rr = entry.hi > stop ? Math.round(((target - entry.hi) / (entry.hi - stop)) * 10) / 10 : null;
+  // Entry far below today's price = not a trade for now (you'd chase it): no risk/reward point, and a penalty.
+  const extendedPct = entry.hi < price * 0.95 ? ((price - entry.hi) / entry.hi) * 100 : 0;
+  if (extendedPct) { score -= 2; reasons.push({ ok: false, text: `Price is ${r2(extendedPct)}% above its buy zone: wait for a pullback (don't chase)` }); }
+  else score += add(rr != null && rr >= 1.5, 1, `Risk/reward ${rr == null ? '—' : '1 : ' + rr} from the entry to the target`);
+  if (bt?.rsi?.trades >= 2) score += add(bt.rsi.winRate >= 0.5, 1, `Backtest: RSI rule won ${Math.round(bt.rsi.winRate * 100)}% of ${bt.rsi.trades} trades on this stock`);
+  if (pl && pl.buyLo == null && price < sma50v) { score -= 3; reasons.push({ ok: false, text: 'Making new lows below its 50-day average (falling knife)' }); }
+  return { score, reasons, rsi: r2(rsi), volRatio: volRatio == null ? null : r2(volRatio), entry, stop, target, rr, breakout, pullback: !!extendedPct };
+}
+
+export function longTermScore(closes, quote, fin) {
+  if (closes.length < 200 || !quote || !(quote.value >= 500_000)) return null;
+  const price = quote.last ?? closes.at(-1), c = [...closes.slice(0, -1), price];
+  const sma200 = sma(c, 200), perf1y = closes.length >= 250 ? ((price - c.at(-250)) / c.at(-250)) * 100 : null;
+  const ratings = Object.fromEntries((fin?.sectorComparison?.ratings ?? []).map((x) => [x.category, x.percentile]));
+  const vals = Object.values(ratings).filter((v) => v != null);
+  const reasons = [], add = (ok, pts, text) => { reasons.push({ ok, text }); return ok ? pts : 0; };
+  let score = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length) / 20 : 0; // 0–5 from ThndrX sector percentiles
+  const name = { profitability: 'Profitability', growth: 'Growth', valuation: 'Valuation (cheapness)', financialHealth: 'Financial health', efficiency: 'Efficiency' };
+  for (const [k, v] of Object.entries(ratings)) if (v != null) reasons.push({ ok: v >= 60, text: `${name[k] ?? k}: ${v}/100 vs its sector (${fin.sectorComparison.sector})` });
+  if (!vals.length) reasons.push({ ok: false, text: 'No sector comparison data from Thndr' });
+  const dy = quote.dividendYieldPercent;
+  score += add(dy >= 4, dy >= 8 ? 2 : 1, `Dividend yield ${dy == null ? '—' : r2(dy) + '%'}`);
+  score += add(price > sma200, 1, `${price > sma200 ? 'Above' : 'Below'} its 200-day average ${r2(sma200)} (long-term trend)`);
+  if (perf1y != null) score += add(perf1y > 0, 1, `1-year performance ${perf1y >= 0 ? '+' : ''}${r2(perf1y)}%`);
+  if (quote.peRatio != null) reasons.push({ ok: quote.peRatio > 0 && quote.peRatio < 15, text: `P/E ${r2(quote.peRatio)}${quote.peRatio <= 0 ? ' (losses)' : ''}` });
+  const pl = plan(c);
+  return { score: r2(score), reasons, ratings, dividendYield: dy ?? null, perf1y: perf1y == null ? null : r2(perf1y), sma200: r2(sma200), buyZone: pl?.buyLo != null ? { lo: pl.buyLo, hi: pl.buyHi } : null, stop: pl?.stop ?? null };
+}
+
 /** Buying n more shares at price: new average cost (= new break-even, before fees) and the extra money needed. */
 export function averageDown(qty, avg, n, price) {
   const total = qty + n;
@@ -277,9 +337,9 @@ export function toInput(args) {
     const a = rest[i];
     if (!a.startsWith('--')) { pos.push(a); continue; }
     let [k, v] = a.slice(2).split(/=(.*)/s);
-    if (v === undefined) v = rest[++i];
+    if (v === undefined) v = rest[i + 1] === undefined || rest[i + 1].startsWith('--') ? true : rest[++i]; // bare flag = true
     k = k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-    input[k] = !STRINGS.has(k) && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
+    input[k] = v === 'true' ? true : v === 'false' ? false : typeof v === 'string' && !STRINGS.has(k) && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
   }
   if (pos.length) {
     const key = POSITIONAL[name] ?? 'symbol';
@@ -392,6 +452,7 @@ function selfTest() {
   assert(JSON.stringify(toInput(['get-price-snapshot', 'COMI', 'HRHO'])) === '["get_price_snapshot",{"symbols":["COMI","HRHO"]}]', 'toInput snapshot');
   assert(JSON.stringify(toInput(['login-verify-code', '--code=012345'])) === '["login_verify_code",{"code":"012345"}]', 'code stays a string');
   assert(toInput(['get-news', '--symbol=COMI', '--content-chars=0'])[1].contentChars === 0, 'kebab flags -> camelCase numbers');
+  assert(JSON.stringify(toInput(['get-financials', '--symbol=COMI', '--compare-to-sector', '--periods=2'])[1]) === '{"symbol":"COMI","compareToSector":true,"periods":2}', 'bare flag = true');
   // autoSignals: levels from yesterday's plan
   const ap = { prevPlan: { buyLo: 100, buyHi: 101, stop: 98, t1: 110 }, change: 0 };
   assert(autoSignals({ ...ap, price: 100.5 }, null).map((x) => x.kind).join() === 'zone', 'zone for any stock');
@@ -400,6 +461,22 @@ function selfTest() {
   assert(autoSignals({ ...ap, price: 111 }, { averageCost: 105 }).map((x) => x.kind).join() === 't1', 'held: target');
   assert(autoSignals({ ...ap, price: 105, change: 2 }, { averageCost: 104 }).map((x) => x.kind).join() === 'even', 'back to break-even');
   assert(autoSignals({ ...ap, price: 105, change: 0 }, { averageCost: 104 }).length === 0, 'already above average: no repeat');
+  // suggestions scoring
+  let falling;
+  const rising = Array.from({ length: 120 }, (_, i) => 100 + i * 0.5 + (i % 3));
+  const st = shortTermScore(rising, { last: rising.at(-1), value: 5e6, volume: 2e6, averageVolume30d: 1e6 }, null);
+  assert(st && st.score >= 4 && st.reasons.some((x) => x.ok && x.text.startsWith('Uptrend')) && st.stop < st.entry.lo, `short-term rising ${JSON.stringify(st)}`);
+  assert(shortTermScore(rising, { last: 160, value: 100_000 }, null) === null, 'illiquid excluded');
+  // Price well above a buy zone (dip then rally): entry = zone, and stop < entry < target must always hold.
+  const dipRally = [...Array.from({ length: 70 }, (_, i) => 100 + (i % 4)), ...Array.from({ length: 15 }, (_, i) => 100 + i * 1.5)];
+  for (const series of [rising, dipRally, falling = Array.from({ length: 120 }, (_, i) => 200 - i)]) {
+    const z = shortTermScore(series, { last: series.at(-1), value: 5e6, volume: 1, averageVolume30d: 1 }, null);
+    assert(z.stop < z.entry.lo && z.entry.hi < z.target, `levels in order ${JSON.stringify({ e: z.entry, s: z.stop, t: z.target })}`);
+  }
+  assert(shortTermScore(falling, { last: falling.at(-1), value: 5e6, volume: 1, averageVolume30d: 1 }, null).score < 0, 'falling knife scores below 0');
+  const lt = longTermScore(Array.from({ length: 260 }, (_, i) => 50 + i * 0.1), { last: 76, value: 1e6, dividendYieldPercent: 9, peRatio: 6 },
+    { sectorComparison: { sector: 'X', ratings: [{ category: 'profitability', percentile: 90 }, { category: 'valuation', percentile: 70 }] } });
+  assert(lt.score >= 7 && lt.reasons.length >= 5, `long-term ${JSON.stringify(lt)}`);
   console.log('self-test ok');
 }
 

@@ -9,7 +9,7 @@ import { networkInterfaces } from 'node:os';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { advise, analyze, autoSignals, backtest, firebaseIdToken, history, RULE_TYPES, ruleHit, ruleText, telegram, thndr } from './alerts.mjs';
+import { advise, analyze, autoSignals, backtest, longTermScore, shortTermScore, firebaseIdToken, history, RULE_TYPES, ruleHit, ruleText, telegram, thndr } from './alerts.mjs';
 
 // ponytail: reuse the QR library thndr-mcp already ships instead of adding our own dependency.
 // Defaults so a packaged app needs no env vars: bundled thndr CLI, and on Windows data in %APPDATA%\ThndrRadar.
@@ -104,9 +104,9 @@ function checkRules(row) {
 
 // Company logos from Thndr (fetched once per stock, kept in logos.json; '' = none available).
 const logos = readJson('logos.json', {});
-async function fetchLogos() {
+async function fetchLogos(list = config.symbols) {
   let changed = false;
-  for (const sym of config.symbols.filter((s) => !(s in logos))) {
+  for (const sym of list.filter((s) => !(s in logos))) {
     try {
       const d = await thndr(['get-instrument-details', sym]);
       const u = d.logoUrl ?? d.instrument?.logoUrl ?? '';
@@ -303,6 +303,84 @@ async function lastBuys() {
       lastBuyCache[sym] = { at: Date.now(), t }; state.lastBuy[sym] = t;
     } catch {}
   }
+}
+
+// ---- Suggestions tab: short-term (مضاربة) and long-term picks from Thndr's screeners, charts, sector ratings, news ----
+// Rule-based screening, rebuilt at most every 30 min. Thndr calls run one by one with a short pause (rate limits).
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const sugg = { data: null, at: 0, building: null, error: null };
+const histCache = new Map(), finCache = new Map();
+// Thndr call that waits and retries when Thndr says "too many requests" (429); null on other errors.
+async function gentle(args) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try { const r = await thndr(args); await pause(200); return r; }
+    catch (e) {
+      if (!/429|rate limit|network error|fetch failed|timeout/i.test(e.message)) { console.error(`suggestions: ${args[0]} ${e.message.slice(0, 120)}`); return null; }
+      await pause(3000 * (attempt + 1));
+    }
+  }
+  return null;
+}
+async function closesOf(sym) {
+  const hit = histCache.get(sym);
+  if (hit && Date.now() - hit.at < 3_600_000) return hit.closes;
+  const j = await gentle(['get-price-history', sym, '--resolution=1d', '--bars=300']);
+  if (!j) throw new Error('no history');
+  const closes = (j.candles ?? j.points).map((b) => b.close);
+  histCache.set(sym, { at: Date.now(), closes });
+  return closes;
+}
+async function financialsOf(sym) {
+  const hit = finCache.get(sym);
+  if (hit && Date.now() - hit.at < 86_400_000) return hit.data;
+  const data = await gentle(['get-financials', `--symbol=${sym}`, '--compare-to-sector', '--periods=1']);
+  if (data) finCache.set(sym, { at: Date.now(), data });
+  return data;
+}
+async function buildSuggestions() {
+  const shortC = new Set(), longC = new Set(), tickers = (r) => (r?.results ?? r?.items ?? r?.gainers ?? r?.members ?? []).map((x) => x.ticker).filter(Boolean);
+  if (running) await running.catch(() => {}); // let the watchlist refresh finish first (fewer parallel calls)
+  const grab = gentle;
+  for (const p of ['momentum-movers', 'breakout-radar', 'reversal-watch']) tickers(await grab(['screen-market', `--preset=${p}`, '--limit=15'])).forEach((t) => shortC.add(t));
+  tickers(await grab(['get-trending', '--stocks-only', '--limit=10'])).forEach((t) => shortC.add(t));
+  tickers(await grab(['get-market-movers', '--type=gainers', '--period=1W', '--limit=10'])).forEach((t) => shortC.add(t));
+  for (const p of ['value-yield', 'steady-performers']) tickers(await grab(['screen-market', `--preset=${p}`, '--limit=20'])).forEach((t) => longC.add(t));
+  tickers(await grab(['get-index-constituents', 'EGX30'])).forEach((t) => longC.add(t));
+  // One quote per stock (snapshot in chunks), then keep the most liquid candidates.
+  const all = [...new Set([...shortC, ...longC])], quotes = {};
+  // Snapshot in chunks; if a chunk fails (one unknown/suspended ticker fails the whole call), retry in small batches.
+  const snap = async (list) => {
+    const r = await grab(['get-price-snapshot', ...list]);
+    if (r) { for (const q of r.quotes ?? []) { quotes[q.ticker] = q; if (q.instrumentId) assetIds[q.ticker] = q.instrumentId; } return; }
+    if (list.length > 1) for (let i = 0; i < list.length; i += Math.ceil(list.length / 4)) await snap(list.slice(i, i + Math.ceil(list.length / 4)));
+  };
+  for (let i = 0; i < all.length; i += 40) await snap(all.slice(i, i + 40));
+  console.error(`suggestions: candidates short ${shortC.size}, long ${longC.size}, quotes ${Object.keys(quotes).length}`);
+  const pick = (set, minValue, by, n) => [...set].filter((t) => quotes[t]?.value >= minValue).sort((a, b) => (quotes[b][by] ?? 0) - (quotes[a][by] ?? 0)).slice(0, n);
+  const shortL = pick(shortC, 2_000_000, 'value', 25), longL = pick(longC, 500_000, 'marketCap', 25);
+  const item = (t, extra) => ({ sym: t, name: quotes[t].name, sector: quotes[t].sector, price: quotes[t].last, change: quotes[t].changePercent, held: state.held.includes(t), watching: config.symbols.includes(t), ...extra });
+  const short = [], long = [];
+  for (const t of shortL) {
+    try { const c = await closesOf(t); const r = shortTermScore(c, quotes[t], backtest(c)); if (r) short.push(item(t, r)); } catch {}
+  }
+  for (const t of longL) {
+    try { const c = await closesOf(t); const r = longTermScore(c, quotes[t], await financialsOf(t)); if (r) long.push(item(t, r)); } catch {}
+  }
+  short.sort((a, b) => b.score - a.score); long.sort((a, b) => b.score - a.score);
+  const top = { short: short.slice(0, 10), long: long.slice(0, 10) };
+  for (const x of [...top.short, ...top.long]) { // latest headline for context
+    try { const n = await news(x.sym, 'en'); x.news = n.items[0] ? { title: n.items[0].title, at: n.items[0].publishedAt, link: n.items[0].link } : null; await pause(100); } catch {}
+  }
+  fetchLogos([...top.short, ...top.long].map((x) => x.sym));
+  return { ...top, at: new Date().toISOString(), scanned: { short: shortL.length, long: longL.length } };
+}
+function suggestions(force) {
+  const fresh = sugg.data && Date.now() - sugg.at < 30 * 60_000;
+  if ((!fresh || force) && !sugg.building) {
+    sugg.building = buildSuggestions().then((d) => { sugg.data = d; sugg.at = Date.now(); sugg.error = null; })
+      .catch((e) => { sugg.error = e.message; console.error('suggestions:', e.message); }).finally(() => { sugg.building = null; });
+  }
+  return { ...(sugg.data ?? {}), building: !!sugg.building, error: sugg.error };
 }
 
 let running = null;
@@ -572,6 +650,9 @@ const server = http.createServer(async (req, res) => {
         if (kind === 'news') return json(await news(sym, u.searchParams.get('locale') === 'ar' ? 'ar' : 'en'));
         return json(await backtestOf(sym));
       } catch (e) { return json({ error: e.message }, 400); }
+    }
+    if (req.method === 'GET' && req.url.startsWith('/api/suggestions')) {
+      return json({ ...suggestions(new URL(req.url, 'http://x').searchParams.has('refresh')), logos });
     }
     if (req.method === 'GET' && req.url === '/api/settings') {
       if (!isLocal(req)) return json({ error: 'Only from this computer' }, 403);
