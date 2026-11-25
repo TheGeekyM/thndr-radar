@@ -76,12 +76,32 @@ function checkRules(row) {
   }
 }
 
+// Company logos from Thndr (fetched once per stock, kept in logos.json; '' = none available).
+const logos = readJson('logos.json', {});
+async function fetchLogos() {
+  let changed = false;
+  for (const sym of config.symbols.filter((s) => !(s in logos))) {
+    try {
+      const d = await thndr(['get-instrument-details', sym]);
+      const u = d.logoUrl ?? d.instrument?.logoUrl ?? '';
+      logos[sym] = typeof u === 'string' && u.startsWith('https://') ? u : '';
+      changed = true;
+    } catch {}
+  }
+  if (changed) saveJson('logos.json', logos);
+}
+
 let running = null;
 function run() {
   // ponytail: one run at a time; a second click waits for the same run instead of hitting Thndr twice.
   running ??= (async () => {
     const { day } = cairo();
     const rows = [], errors = {};
+    // Account totals for the net-worth card (cash = totalAccountValue - portfolioValue).
+    try {
+      const a = await thndr(['get-account-summary']);
+      state.account = { totalAccountValue: a.totalAccountValue, portfolioValue: a.portfolioValue, availableCash: a.availableCash, buyingPower: a.buyingPower, currency: a.currency };
+    } catch {}
     // Stocks you own on Thndr are always watched and can't be removed. If this fails (not logged in), keep the last list.
     try {
       const { positions } = await thndr(['get-account-positions']);
@@ -116,6 +136,7 @@ function run() {
       }
     }
     Object.assign(state, { rows, errors, lastRun: new Date().toISOString() });
+    fetchLogos();
   })().finally(() => { running = null; });
   return running;
 }
@@ -242,7 +263,7 @@ async function body(req) {
 // Advice for each stock you hold, recomputed with the live price on every request.
 const advice = () => Object.fromEntries(state.rows.filter((r) => state.positions[r.sym]).map((r) => [r.sym, advise(r, state.positions[r.sym])]));
 const snapshot = () => ({
-  ...state, advice: advice(), log, rules: config.rules, running: !!running, market: cairo().open, telegram: !!(config.telegramToken && config.telegramChat),
+  ...state, advice: advice(), log, rules: config.rules, logos, running: !!running, market: cairo().open, telegram: !!(config.telegramToken && config.telegramChat),
 });
 
 http.createServer(async (req, res) => {

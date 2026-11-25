@@ -106,7 +106,34 @@
   .tape th { font-size: 11px; }
   .tape tr:nth-child(even) td { background: var(--bg); }
   /* Your average buy price under the price (held stocks); click = "My buys" tab in the sidebar */
-  .avgb { display: block; border: 0; background: none; padding: 0; margin-top: 1px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  /* Net-worth card (Thndr-style) */
+  .pf { display: grid; grid-template-columns: minmax(260px, 1.2fr) 2fr; gap: 24px; align-items: center; }
+  .pf .lbl { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .pf .nw { font-size: 34px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin: 4px 0 8px; line-height: 1.1; }
+  .pf .nw small { font-size: 15px; font-weight: 600; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
+  .pf .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 99px; font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .chip .k { font-weight: 500; opacity: .8; }
+  .chip.up { background: var(--buy-bg); color: var(--buy); } .chip.down { background: var(--sell-bg); color: var(--sell); }
+  .chip .ic { width: 14px; height: 14px; }
+  .pf .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .pf .cell { background: var(--bg); border-radius: 10px; padding: 10px 12px; }
+  .pf .cell .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .pf .cell .v { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .alloc { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 12px; gap: 2px; }
+  .alloc span { display: block; min-width: 2px; }
+  .eye { border: 0; background: none; color: var(--muted); padding: 2px; display: inline-flex; }
+  .eye:hover { color: var(--text); }
+  body.hide-money .money { filter: blur(8px); user-select: none; }
+  @media (max-width: 1000px) { .pf { grid-template-columns: 1fr; } .pf .grid { grid-template-columns: repeat(2, 1fr); } }
+  /* Company logo (letter shows if there is no logo or it fails to load) */
+  .symcell { display: flex; align-items: center; gap: 10px; }
+  .logo { position: relative; width: 30px; height: 30px; border-radius: 50%; background: var(--zone); display: inline-grid; place-items: center; overflow: hidden; flex: none; border: 1px solid var(--line); }
+  .logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; }
+  .logo i { font-style: normal; font-weight: 700; font-size: 12px; color: var(--muted); }
+  aside .head .logo { width: 44px; height: 44px; } aside .head .logo i { font-size: 16px; }
+  .pnl { display: block; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 1px; white-space: nowrap; }
+  .avgb { display: block; text-align: left; border: 0; background: none; padding: 0; margin-top: 1px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .avgb:hover { color: var(--accent); text-decoration: underline; }
   #side-tabs { margin-top: 10px; } #side-tabs:empty { display: none; }
   .rec { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: var(--zone); }
@@ -183,6 +210,7 @@
   <button id="refresh" class="primary"><span data-icon="refresh"></span>Refresh</button>
 </header>
 <main>
+  <section id="pf"></section>
   <section>
     <h2>Watchlist</h2>
     <form id="add" style="align-items:center"><input id="sym" placeholder="e.g. HRHO" maxlength="12" required><button id="addbtn"><span data-icon="plus"></span>Add</button><span id="add-err" class="err"></span></form>
@@ -245,6 +273,8 @@ const ICONS = {
   check: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
   briefcase: '<rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  eye: '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff: '<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
@@ -283,9 +313,68 @@ function spark(vals) {
     <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>`;
 }
 
+// ---- Money helpers, logos, per-stock P&L, net-worth card ----
+const money = (n, d = 2) => (n == null || isNaN(n) ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
+const signed = (n, d = 2) => (n > 0 ? '+' : n < 0 ? '−' : '') + money(Math.abs(n), d);
+function logo(sym) {
+  const u = last?.logos?.[sym];
+  return `<span class="logo">${u ? `<img src="${esc(u)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<i>${esc(sym[0] || '')}</i></span>`;
+}
+const posOf = (s, sym) => { const p = s.positions?.[sym]; return p && (p.qty ?? p.quantity) ? { qty: p.qty ?? p.quantity, avg: p.avg ?? p.averageCost } : null; };
+// Under the price of a stock you own: unrealized P&L in EGP and %, live with the price; click opens your buys.
+function pnlCell(s, r) {
+  const p = posOf(s, r.sym);
+  if (!p || p.avg == null) return '';
+  const pl = (r.price - p.avg) * p.qty, pct = ((r.price - p.avg) / p.avg) * 100, cls = pl >= 0 ? 'up' : 'down';
+  return `<button class="avgb money" data-avg="${esc(r.sym)}" title="${money(p.qty, 0)} shares · avg ${fmt(p.avg)} EGP. Click for all your buys"><span class="pnl ${cls}">${signed(pl)} (${signed(pct)}%)</span>Avg ${fmt(p.avg)}</button>`;
+}
+function renderPortfolio(s) {
+  const syms = Object.keys(s.positions || {});
+  if (!syms.length) { $('pf').hidden = true; return; }
+  $('pf').hidden = false;
+  let value = 0, cost = 0, today = 0;
+  const parts = [];
+  for (const sym of syms) {
+    const p = posOf(s, sym); if (!p) continue;
+    const r = s.rows.find((x) => x.sym === sym), price = r?.price ?? s.positions[sym].marketPrice ?? p.avg;
+    const prev = r?.change != null ? price / (1 + r.change / 100) : price;
+    value += p.qty * price; cost += p.qty * (p.avg ?? price); today += p.qty * (price - prev);
+    parts.push({ sym, v: p.qty * price });
+  }
+  const a = s.account, cash = a ? Math.max(0, (a.totalAccountValue ?? 0) - (a.portfolioValue ?? 0)) : 0;
+  const net = value + cash, ret = value - cost, retPct = cost ? (ret / cost) * 100 : 0, todayPct = value - today ? (today / (value - today)) * 100 : 0;
+  const chip = (k, n, pct) => `<span class="chip ${n >= 0 ? 'up' : 'down'}"><span class="k">${k}</span>${icon(n >= 0 ? 'up' : 'down')}<span class="money">${signed(n)} EGP</span> (${signed(pct)}%)</span>`;
+  const palette = ['#2f6bff', '#12a150', '#f5a524', '#e5484d', '#8e4ec6', '#0ea5a4', '#d6409f', '#6b7280'];
+  parts.sort((x, y) => y.v - x.v);
+  const hidden = document.body.classList.contains('hide-money');
+  $('pf').innerHTML = `<div class="pf">
+    <div>
+      <div class="lbl">Net worth <button class="eye" id="eye" title="${hidden ? 'Show amounts' : 'Hide amounts'}">${icon(hidden ? 'eyeoff' : 'eye')}</button></div>
+      <div class="nw money">${money(net)}<small>EGP</small></div>
+      <div class="chips">${chip('Total return', ret, retPct)}${chip('Today', today, todayPct)}</div>
+    </div>
+    <div>
+      <div class="grid">
+        <div class="cell"><div class="k">Stocks value</div><div class="v money">${money(value)}</div></div>
+        <div class="cell"><div class="k">Invested</div><div class="v money">${money(cost)}</div></div>
+        <div class="cell"><div class="k">Cash</div><div class="v money">${a ? money(cash) : '—'}</div></div>
+        <div class="cell"><div class="k">Buying power</div><div class="v money">${a?.buyingPower != null ? money(a.buyingPower) : '—'}</div></div>
+      </div>
+      <div class="alloc" title="Portfolio split by stock">${parts.map((x, i) => `<span style="flex:${x.v};background:${palette[i % palette.length]}" title="${esc(x.sym)} ${value ? fmt((x.v / value) * 100, 1) : 0}%"></span>`).join('')}</div>
+      <div class="muted" style="font-size:11px;margin-top:6px;display:flex;gap:12px;flex-wrap:wrap">${parts.map((x, i) => `<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${palette[i % palette.length]};margin-right:4px"></span>${esc(x.sym)} ${value ? fmt((x.v / value) * 100, 1) : 0}%</span>`).join('')}</div>
+    </div></div>`;
+  $('eye').onclick = () => {
+    const h = document.body.classList.toggle('hide-money');
+    try { localStorage.setItem('hideMoney', h ? '1' : ''); } catch {}
+    renderPortfolio(last);
+  };
+}
+try { if (localStorage.getItem('hideMoney')) document.body.classList.add('hide-money'); } catch {}
+
 let last = null, sideSym = null;
 function render(s) {
   last = s;
+  renderPortfolio(s);
   if (view.startsWith('rules:') && $('dlg').open) renderRules();
   $('market').textContent = s.market ? 'Market open' : 'Market closed';
   $('market').className = 'pill ' + (s.market ? 'BUY' : '');
@@ -300,7 +389,7 @@ function render(s) {
     const rm = s.held.includes(sym)
       ? `<td><span class="pill HOLD" title="You own this on Thndr">${icon('briefcase')}In portfolio</span></td>`
       : `<td><button class="x" data-rm="${esc(sym)}" title="Remove from watchlist">${icon('x')}</button></td>`;
-    if (!r) return `<tr><td><b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></td><td colspan="9" class="err">${esc(s.errors[sym])}</td>${rm}</tr>`;
+    if (!r) return `<tr><td><div class="symcell">${logo(sym)}<b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></div></td><td colspan="9" class="err">${esc(s.errors[sym])}</td>${rm}</tr>`;
     // Arabic hover explanation with this stock's numbers
     const gap = r.sma50 == null ? 0 : ((r.price - r.sma50) / r.sma50) * 100;
     const trendTip = r.sma50 == null ? '' : r.price > r.sma50
@@ -311,9 +400,9 @@ function render(s) {
       : `<span class="trend down" title="${esc(trendTip)}">${icon('down')}Below avg</span>`;
     const zone = r.rsi == null ? '' : r.rsi < 30 ? 'up' : r.rsi > 70 ? 'down' : '';
     return `<tr data-sym="${esc(sym)}"${sym === sideSym ? ' class="sel"' : ''}>
-      <td><b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></td>
+      <td><div class="symcell">${logo(sym)}<b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></div></td>
       <td style="white-space:normal;min-width:190px"><span class="pill ${esc(r.now.side)}">${esc(r.now.side)}</span><div class="muted" style="font-size:12px">${esc(r.now.why)}</div></td>
-      <td class="num">${fmt(r.price)}${s.avgCost?.[sym] ? `<button class="avgb" data-avg="${esc(sym)}" title="Your average buy price (from Thndr). Click for all your buys">Avg ${fmt(s.avgCost[sym])} EGP</button>` : ''}</td>
+      <td class="num">${fmt(r.price)}${pnlCell(s, r)}</td>
       <td class="num ${r.change >= 0 ? 'up' : 'down'}">${r.change == null ? '—' : (r.change >= 0 ? '+' : '') + fmt(r.change) + '%'}</td>
       <td><div class="rsi"><b class="num ${zone}">${fmt(r.rsi, 1)}</b>${r.rsi == null ? '' : `<div class="bar"><i style="left:calc(${r.rsi}% - 1px)"></i></div>`}</div></td>
       <td>${spark(r.rsiTrail)}</td>
@@ -508,7 +597,7 @@ function openSide(sym, view = 'market') {
   sideSym = sym; sideView = view;
   document.body.classList.add('side-open');
   document.querySelectorAll('#rows tr').forEach((tr) => tr.classList.toggle('sel', tr.dataset.sym === sym));
-  $('side-sym').textContent = sym;
+  $('side-sym').innerHTML = `<span class="symcell">${logo(sym)}${esc(sym)}</span>`;
   renderSideTabs(); renderSideHead(); renderControls();
   loadBook(); loadChart();
 }
@@ -791,7 +880,6 @@ function renderPane() {
 // ---- "My buys" sidebar tab (held stocks): your average, every buy, P/L, and a rule-based suggestion ----
 // Display only: this app never places orders. Average/shares/cost come from Thndr's positions (average includes fees).
 let sideView = 'market', fillsData = null, fillsBusy = false;
-const money = (v) => (v == null ? '—' : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const posDay = (t) => new Date(t).toLocaleDateString('en-GB', { timeZone: 'Africa/Cairo', day: 'numeric', month: 'short', year: 'numeric' });
 const sPct = (v) => `${v >= 0 ? '+' : ''}${fmt(v, 1)}%`;
 
