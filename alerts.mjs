@@ -239,7 +239,8 @@ export function averageDown(qty, avg, n, price) {
 /**
  * Rule-based advice for a stock you hold (row = analyze() result, pos = Thndr position). In order:
  *  SELL         price broke the stop-loss set before today
- *  TAKE_PROFIT  in profit and overbought, or within half a typical move of Target 1
+ *  TAKE_PROFIT  in profit and overbought, or near Target 1 with a gain of at least one typical move
+ *               (a tiny gain near a short-term ceiling is not worth selling: HOLD)
  *  AVERAGE_DOWN in a loss, price inside the buy zone, risk/reward >= 1.5
  *  WAIT         in a loss but no buy zone (fresh lows), downtrend, or buy zone not reached yet
  *  HOLD         everything else
@@ -255,7 +256,7 @@ export function advise(row, pos) {
   if (!pl) return say('HOLD', 'Not enough price history for a plan.');
   const brokeStop = row.prevStop ?? pl.stop;
   if (price <= brokeStop) return say('SELL', `Price ${price} fell below the stop-loss ${brokeStop}: the plan broke, so reduce or exit to keep the loss from growing.`);
-  if (!loss && (row.now?.side === 'SELL' || (pl.t1 != null && pl.t1 - price <= pl.move / 2))) {
+  if (!loss && (row.now?.side === 'SELL' || (pl.t1 != null && pl.t1 - price <= pl.move / 2 && price - avg >= pl.move))) {
     return say('TAKE_PROFIT', row.now?.side === 'SELL'
       ? `You're up ${pnl.toFixed(1)}% and the stock is overbought (RSI ${row.rsi.toFixed(0)}): sell part, keep the rest with the stop at ${pl.stop}.`
       : `You're up ${pnl.toFixed(1)}% and the price is close to Target 1 (${pl.t1}): sell part, keep the rest with the stop at ${pl.stop}.`);
@@ -438,6 +439,10 @@ function selfTest() {
   assert(advise(analyze('X', crash), held(200)).action === 'WAIT', 'advise fresh lows');
   const rally = analyze('X', [...chop, 106, 108, 109, 109.5]);
   assert(advise({ ...rally, now: { side: 'SELL' }, rsi: 75 }, held(100)).action === 'TAKE_PROFIT', 'advise take profit');
+  // near Target 1 but only a tiny gain (less than one typical move) -> HOLD, not TAKE_PROFIT (EFID case)
+  const nearT1 = { ...rally, now: { side: null }, plan: { ...rally.plan, t1: rally.price + 0.1, move: 1 } };
+  assert(advise(nearT1, held(rally.price - 0.5)).action === 'HOLD', 'advise tiny gain near T1 holds');
+  assert(advise(nearT1, held(rally.price - 2)).action === 'TAKE_PROFIT', 'advise real gain near T1 takes profit');
   assert(advise(rc, null) === null, 'advise needs a position');
   // backtest: a gentle wave (±4%, period 40) -> RSI buys near troughs mostly win.
   // (With ±15% swings the same rule loses: RSI < 30 fires early in the fall and the -10% stop hits — the "falling knife".)
