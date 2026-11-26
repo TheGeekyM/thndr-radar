@@ -156,6 +156,10 @@
   .pill.WAIT { color: #b45309; background: #fef3c7; }
   :root[data-theme="dark"] .pill.WAIT { color: #fbbf24; background: #3a2a0a; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.WAIT { color: #fbbf24; background: #3a2a0a; } }
+  .lvls { margin-top: 5px; font-size: 12px; }
+  .lv { display: flex; justify-content: space-between; gap: 10px; padding: 3px 6px; border-top: 1px solid var(--line); border-inline-start: 3px solid var(--c); }
+  .lv b { color: var(--c); font-variant-numeric: tabular-nums; unicode-bidi: isolate; direction: ltr; }
+  .lv span { color: var(--c); font-weight: 600; }
   .mine { margin-left: 6px; font-size: 10.5px; color: var(--muted); font-weight: 600; }
   .vol { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 99px; color: #b45309; background: #fef3c7; }
   :root[data-theme="dark"] .vol { color: #fbbf24; background: #3a2a0a; }
@@ -462,7 +466,7 @@ const AR = {
   'Sort: newest first': 'ترتيب: الأحدث أولاً', 'Sort: my P&L %': 'ترتيب: مكسبي/خسارتي %', "Sort: today's change": 'ترتيب: تغير النهارده', 'Sort: RSI (low first)': 'ترتيب: RSI (الأقل أولاً)',
   'Sort: signal (BUY first)': 'ترتيب: الإشارة (الشراء أولاً)', 'Sort: volume vs normal': 'ترتيب: حجم التداول', 'Sort: A–Z': 'ترتيب: أبجدي',
   'Symbol': 'السهم', 'Signal now': 'الإشارة دلوقتي', 'Price': 'السعر', 'Change': 'التغير', 'RSI 30 days': 'RSI آخر 30 يوم', '50-day avg': 'متوسط 50 يوم', 'Trend': 'الاتجاه',
-  'Last alert': 'آخر تنبيه', 'Alerts': 'التنبيهات', 'Watching': 'بتابعها', 'Wait': 'استنى', 'Hold': 'احتفظ', 'Average down': 'اعمل متوسط', 'Take profit': 'خد مكسبك',
+  'Last alert': 'آخر تنبيه', 'Alerts': 'التنبيهات', 'Watching': 'بتابعها', 'Wait': 'استنى', 'Hold': 'احتفظ', 'Average down': 'اعمل متوسط', 'Take profit': 'خد مكسبك', 'Buy more': 'اشتري تاني',
   'Sell / reduce': 'بيع / قلّل', 'Info': 'معلومة', 'your position': 'حسب مركزك', 'In portfolio': 'في محفظتك', 'Above avg': 'فوق المتوسط', 'Below avg': 'تحت المتوسط',
   'Alerts log': 'سجل التنبيهات', 'Time': 'الوقت', 'Signal': 'الإشارة', 'Reason': 'السبب', 'No alerts yet. They appear here and as desktop notifications.': 'مفيش تنبيهات لسه. هتظهر هنا وكإشعارات على الكمبيوتر.',
   'Market': 'السوق', 'My buys': 'مشترياتي', 'Trade plan': 'خطة التداول', 'Buy zone': 'منطقة الشراء', 'Stop-loss': 'وقف الخسارة', 'Target 1': 'الهدف الأول', 'Target 2': 'الهدف التاني',
@@ -654,6 +658,15 @@ function signalOf(s, r) {
   return { cls: r.now.side, label: r.now.side, why: r.now.why, mine: false };
 }
 
+// Exact prices under the signal, one colored line each: take profit / target, stop-loss, buy or average-down zone.
+function levelsOf(s, r) {
+  const pl = r.plan; if (!pl) return '';
+  const p = posOf(s, r.sym), zone = pl.buyLo != null ? `${fmt(pl.buyLo)} – ${fmt(pl.buyHi)}` : '—';
+  const ln = (c, label, v) => `<div class="lv" style="--c:${c}"><span>${label}</span><b>${v}</b></div>`;
+  const buy = p ? (pl.buyHi != null && pl.buyHi < p.avg ? 'Average down' : 'Buy more') : 'Buy zone';
+  return `<div class="lvls">${ln('var(--accent)', p ? 'Take profit' : 'Target 1', pl.t1 != null ? fmt(pl.t1) : '—')}${ln(p ? 'var(--notheld)' : 'var(--buy)', buy, zone)}${ln('var(--sell)', 'Stop-loss', fmt(pl.stop))}</div>`;
+}
+
 // ---- Money helpers, logos, per-stock P&L, net-worth card ----
 const money = (n, d = 2) => (n == null || isNaN(n) ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 const signed = (n, d = 2) => (n > 0 ? '+' : n < 0 ? '−' : '') + money(Math.abs(n), d);
@@ -746,7 +759,7 @@ function render(s) {
     const zone = r.rsi == null ? '' : r.rsi < 30 ? 'up' : r.rsi > 70 ? 'down' : '';
     return `<tr data-sym="${esc(sym)}"${sym === sideSym ? ' class="sel"' : ''}>
       <td><div class="symcell">${logo(sym)}<b class="${s.held.includes(sym) ? '' : 'notheld'}" title="${s.held.includes(sym) ? 'In your portfolio' : 'Not in your portfolio'}">${esc(sym)}</b></div></td>
-      <td style="white-space:normal;min-width:190px" title="${esc(signalTipAr(s, r))}">${(() => { const g = signalOf(s, r); return `<span class="pill ${g.cls}">${esc(g.label)}</span>${g.mine ? '<span class="mine">your position</span>' : ''}<div class="muted" style="font-size:12px">${colorPct(g.why)}</div>`; })()}</td>
+      <td style="white-space:normal;min-width:190px" title="${esc(signalTipAr(s, r))}">${(() => { const g = signalOf(s, r); return `<span class="pill ${g.cls}">${esc(g.label)}</span>${g.mine ? '<span class="mine">your position</span>' : ''}<div class="muted" style="font-size:12px">${colorPct(g.why)}</div>${levelsOf(s, r)}`; })()}</td>
       <td class="num pcell"><div class="p">${fmt(r.price)}</div>${pnlCell(s, r)}</td>
       <td class="num ${r.change >= 0 ? 'up' : 'down'}">${r.change == null ? '—' : (r.change >= 0 ? '+' : '') + fmt(r.change) + '%'}${r.volRatio >= 1.5 ? `<span class="vol" title="Volume today is ${fmt(r.volRatio, 1)}× the 30-day average: unusual interest">Vol ${fmt(r.volRatio, 1)}×</span>` : ''}</td>
       <td title="${esc(rsiTipAr(r))}"><div class="rsi"><b class="num ${zone}">${fmt(r.rsi, 1)}</b>${r.rsi == null ? '' : `<div class="bar"><i style="left:calc(${r.rsi}% - 1px)"></i></div>`}</div></td>
