@@ -163,7 +163,7 @@ export function autoSignals(row, pos) {
   const avg = pos?.averageCost ?? pos?.avg;
   if (avg != null) {
     if (price <= pp.stop) out.push({ kind: 'stop', side: 'SELL', why: `Fell to the stop-loss ${f(pp.stop)}: the plan broke. Consider cutting the loss (your average ${f(avg)}).` });
-    if (pp.t1 != null && price >= pp.t1) out.push({ kind: 't1', side: 'SELL', why: `Reached Target 1 ${f(pp.t1)}: consider taking some profit${price > avg ? ` (+${f(((price - avg) / avg) * 100)}% on your average)` : ''}.` });
+    if (pp.t1 != null && price >= pp.t1 && !(row.fair && price < row.fair.lo)) out.push({ kind: 't1', side: 'SELL', why: `Reached Target 1 ${f(pp.t1)}: consider taking some profit${price > avg ? ` (+${f(((price - avg) / avg) * 100)}% on your average)` : ''}.` });
     const prev = row.change != null ? price / (1 + row.change / 100) : null;
     if (prev != null && prev < avg && price >= avg) out.push({ kind: 'even', side: 'INFO', why: `Back to your average ${f(avg)} (break-even). You can exit without a loss now.` });
   }
@@ -230,6 +230,31 @@ export function longTermScore(closes, quote, fin) {
   return { score: r2(score), reasons, ratings, dividendYield: dy ?? null, perf1y: perf1y == null ? null : r2(perf1y), sma200: r2(sma200), buyZone: pl?.buyLo != null ? { lo: pl.buyLo, hi: pl.buyHi } : null, stop: pl?.stop ?? null };
 }
 
+/**
+ * Fair value from the stock's own valuation history (no tuned constants):
+ * for each reported quarter, own P/E = close on the quarter-end day / trailing-12-month EPS of that quarter;
+ * fair range = latest EPS x [lowest, highest] of those P/Es, mid = latest EPS x their average.
+ * fin = get-financials (--periods=4 --compare-to-sector), bars = daily candles [{time, close}].
+ * null for losses (EPS <= 0) or fewer than 2 usable quarters. Uses trailing EPS, so it lags fast-growing companies.
+ */
+export function fairValue(fin, bars) {
+  const eps = fin?.metrics?.eps, latest = eps?.latest?.value;
+  if (!(latest > 0) || !bars?.length) return null;
+  const END = { 1: '03-31', 2: '06-30', 3: '09-30', 4: '12-31' }, pes = [];
+  for (const q of eps.series ?? []) {
+    const m = /Q([1-4]) (\d\d)$/.exec(q.period ?? '');
+    if (!m || !(q.value > 0)) continue;
+    const day = `20${m[2]}-${END[m[1]]}`, bar = bars.filter((b) => String(b.time).slice(0, 10) <= day).at(-1);
+    if (bar && day.localeCompare(String(bars[0].time).slice(0, 10)) >= 0) pes.push(bar.close / q.value);
+  }
+  if (pes.length < 2) return null;
+  // ponytail: full min–max of 4 P/Es; wide when earnings jumped (shows the uncertainty). Trimming to the middle two gave falsely tight ranges.
+  const core = pes;
+  const sectorPe = fin.sectorComparison?.metrics?.find((x) => x.key === 'pe')?.median ?? null;
+  return { lo: r2(latest * Math.min(...core)), hi: r2(latest * Math.max(...core)), mid: r2(latest * pes.reduce((a, b) => a + b, 0) / pes.length),
+    eps: latest, pe: { lo: r2(Math.min(...core)), hi: r2(Math.max(...core)) }, sectorPe: sectorPe == null ? null : r2(sectorPe) };
+}
+
 /** Buying n more shares at price: new average cost (= new break-even, before fees) and the extra money needed. */
 export function averageDown(qty, avg, n, price) {
   const total = qty + n;
@@ -240,7 +265,7 @@ export function averageDown(qty, avg, n, price) {
  * Rule-based advice for a stock you hold (row = analyze() result, pos = Thndr position). In order:
  *  SELL         price broke the stop-loss set before today
  *  TAKE_PROFIT  in profit and overbought, or near Target 1 with a gain of at least one typical move
- *               (a tiny gain near a short-term ceiling is not worth selling: HOLD)
+ *               (a tiny gain near a short-term ceiling is not worth selling: HOLD; never below fair value row.fair.lo)
  *  AVERAGE_DOWN in a loss, price inside the buy zone, risk/reward >= 1.5
  *  WAIT         in a loss but no buy zone (fresh lows), downtrend, or buy zone not reached yet
  *  HOLD         everything else
@@ -256,7 +281,8 @@ export function advise(row, pos) {
   if (!pl) return say('HOLD', 'Not enough price history for a plan.');
   const brokeStop = row.prevStop ?? pl.stop;
   if (price <= brokeStop) return say('SELL', `Price ${price} fell below the stop-loss ${brokeStop}: the plan broke, so reduce or exit to keep the loss from growing.`);
-  if (!loss && (row.now?.side === 'SELL' || (pl.t1 != null && pl.t1 - price <= pl.move / 2 && price - avg >= pl.move))) {
+  const cheap = row.fair && price < row.fair.lo; // below fair value: don't sell winners early
+  if (!loss && !cheap && (row.now?.side === 'SELL' || (pl.t1 != null && pl.t1 - price <= pl.move / 2 && price - avg >= pl.move))) {
     return say('TAKE_PROFIT', row.now?.side === 'SELL'
       ? `You're up ${pnl.toFixed(1)}% and the stock is overbought (RSI ${row.rsi.toFixed(0)}): sell part, keep the rest with the stop at ${pl.stop}.`
       : `You're up ${pnl.toFixed(1)}% and the price is close to Target 1 (${pl.t1}): sell part, keep the rest with the stop at ${pl.stop}.`);
@@ -267,7 +293,7 @@ export function advise(row, pos) {
   if (loss && pl.buyLo == null) return say('WAIT', `You're down ${Math.abs(pnl).toFixed(1)}% and the price is making new lows (no support below): don't average down until it stops falling.`);
   if (loss && down) return say('WAIT', `You're down ${Math.abs(pnl).toFixed(1)}% and the trend is down (below the 50-day avg): don't average down yet, wait for the buy zone ${pl.buyLo}–${pl.buyHi}.`);
   if (loss) return say('HOLD', `You're down ${Math.abs(pnl).toFixed(1)}% but the trend is up: hold; if you want to average down, wait for the buy zone ${pl.buyLo}–${pl.buyHi}.`);
-  return say('HOLD', `You're ${pnl >= 0 ? 'up' : 'down'} ${Math.abs(pnl).toFixed(1)}%: hold${pl.t1 != null ? `, Target 1 is ${pl.t1}` : ''}; sell if it closes below the stop ${pl.stop}.`);
+  return say('HOLD', `You're ${pnl >= 0 ? 'up' : 'down'} ${Math.abs(pnl).toFixed(1)}%: hold${cheap ? `, still below fair value ${row.fair.lo}–${row.fair.hi}` : pl.t1 != null ? `, Target 1 is ${pl.t1}` : ''}; sell if it closes below the stop ${pl.stop}.`);
 }
 
 // Per-stock alert rules set in the app: { id, type, value, side, note }.
@@ -443,6 +469,15 @@ function selfTest() {
   const nearT1 = { ...rally, now: { side: null }, plan: { ...rally.plan, t1: rally.price + 0.1, move: 1 } };
   assert(advise(nearT1, held(rally.price - 0.5)).action === 'HOLD', 'advise tiny gain near T1 holds');
   assert(advise(nearT1, held(rally.price - 2)).action === 'TAKE_PROFIT', 'advise real gain near T1 takes profit');
+  // overbought in profit: below fair value -> HOLD, above it -> TAKE_PROFIT
+  const ob = { ...rally, now: { side: 'SELL' }, rsi: 75 };
+  assert(advise({ ...ob, fair: { lo: rally.price + 5, hi: rally.price + 9 } }, held(100)).action === 'HOLD', 'advise below fair value holds');
+  assert(advise({ ...ob, fair: { lo: rally.price - 9, hi: rally.price - 5 } }, held(100)).action === 'TAKE_PROFIT', 'advise above fair value takes profit');
+  // fairValue: EPS 1 -> 2, closes 10 / 16 at quarter ends -> P/E 10 and 8 -> range 16–20, mid 18; losses -> null
+  const fv = fairValue({ metrics: { eps: { latest: { value: 2 }, series: [{ period: 'TTM Q1 26', value: 1 }, { period: 'TTM Q2 26', value: 2 }] } } },
+    [{ time: '2026-03-01', close: 9 }, { time: '2026-03-31', close: 10 }, { time: '2026-06-30', close: 16 }, { time: '2026-07-01', close: 30 }]);
+  assert(fv && fv.lo === 16 && fv.hi === 20 && fv.mid === 18, `fairValue ${JSON.stringify(fv)}`);
+  assert(fairValue({ metrics: { eps: { latest: { value: -1 }, series: [] } } }, [{ time: '2026-01-01', close: 1 }]) === null, 'fairValue losses');
   assert(advise(rc, null) === null, 'advise needs a position');
   // backtest: a gentle wave (±4%, period 40) -> RSI buys near troughs mostly win.
   // (With ±15% swings the same rule loses: RSI < 30 fires early in the fall and the -10% stop hits — the "falling knife".)

@@ -9,20 +9,20 @@
 <style>
   :root {
     --bg: #f6f7f9; --panel: #fff; --text: #1b1f24; --muted: #69707a; --line: #e3e6ea;
-    --buy: #127a3e; --buy-bg: #e3f4ea; --sell: #b42318; --sell-bg: #fbe7e5; --accent: #2457c5; --zone: #eef0f3; --notheld: #b7860b;
+    --buy: #127a3e; --buy-bg: #e3f4ea; --sell: #b42318; --sell-bg: #fbe7e5; --accent: #2457c5; --zone: #eef0f3; --notheld: #b7860b; --fair: #7c3aed;
   }
   /* Dark theme: follows the system unless the top-bar toggle picked one (data-theme on <html>) */
   :root { color-scheme: light; --sb: #3b4049; --sb-hover: #22262c; }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #121417; --panel: #1b1e23; --text: #e7e9ec; --muted: #9aa1ab; --line: #2c3038;
-      --buy: #4cc27a; --buy-bg: #173322; --sell: #f2776b; --sell-bg: #3a1c1a; --accent: #7aa2ff; --zone: #262a31; --notheld: #f2c94c;
+      --buy: #4cc27a; --buy-bg: #173322; --sell: #f2776b; --sell-bg: #3a1c1a; --accent: #7aa2ff; --zone: #262a31; --notheld: #f2c94c; --fair: #b794f6;
       color-scheme: dark; --sb: #4a505a; --sb-hover: #6b727d;
     }
   }
   :root[data-theme="dark"] {
       --bg: #121417; --panel: #1b1e23; --text: #e7e9ec; --muted: #9aa1ab; --line: #2c3038;
-      --buy: #4cc27a; --buy-bg: #173322; --sell: #f2776b; --sell-bg: #3a1c1a; --accent: #7aa2ff; --zone: #262a31; --notheld: #f2c94c;
+      --buy: #4cc27a; --buy-bg: #173322; --sell: #f2776b; --sell-bg: #3a1c1a; --accent: #7aa2ff; --zone: #262a31; --notheld: #f2c94c; --fair: #b794f6;
       color-scheme: dark; --sb: #4a505a; --sb-hover: #6b727d;
   }
   * { box-sizing: border-box; }
@@ -466,7 +466,7 @@ const AR = {
   'Sort: newest first': 'ترتيب: الأحدث أولاً', 'Sort: my P&L %': 'ترتيب: مكسبي/خسارتي %', "Sort: today's change": 'ترتيب: تغير النهارده', 'Sort: RSI (low first)': 'ترتيب: RSI (الأقل أولاً)',
   'Sort: signal (BUY first)': 'ترتيب: الإشارة (الشراء أولاً)', 'Sort: volume vs normal': 'ترتيب: حجم التداول', 'Sort: A–Z': 'ترتيب: أبجدي',
   'Symbol': 'السهم', 'Signal now': 'الإشارة دلوقتي', 'Price': 'السعر', 'Change': 'التغير', 'RSI 30 days': 'RSI آخر 30 يوم', '50-day avg': 'متوسط 50 يوم', 'Trend': 'الاتجاه',
-  'Last alert': 'آخر تنبيه', 'Alerts': 'التنبيهات', 'Watching': 'بتابعها', 'Wait': 'استنى', 'Hold': 'احتفظ', 'Average down': 'اعمل متوسط', 'Take profit': 'خد مكسبك', 'Buy more': 'اشتري تاني',
+  'Last alert': 'آخر تنبيه', 'Alerts': 'التنبيهات', 'Watching': 'بتابعها', 'Wait': 'استنى', 'Hold': 'احتفظ', 'Average down': 'اعمل متوسط', 'Take profit': 'خد مكسبك', 'Buy more': 'اشتري تاني', 'Fair value': 'القيمة العادلة', 'Next ceiling': 'السقف الجاي',
   'Sell / reduce': 'بيع / قلّل', 'Info': 'معلومة', 'your position': 'حسب مركزك', 'In portfolio': 'في محفظتك', 'Above avg': 'فوق المتوسط', 'Below avg': 'تحت المتوسط',
   'Alerts log': 'سجل التنبيهات', 'Time': 'الوقت', 'Signal': 'الإشارة', 'Reason': 'السبب', 'No alerts yet. They appear here and as desktop notifications.': 'مفيش تنبيهات لسه. هتظهر هنا وكإشعارات على الكمبيوتر.',
   'Market': 'السوق', 'My buys': 'مشترياتي', 'Trade plan': 'خطة التداول', 'Buy zone': 'منطقة الشراء', 'Stop-loss': 'وقف الخسارة', 'Target 1': 'الهدف الأول', 'Target 2': 'الهدف التاني',
@@ -517,6 +517,7 @@ const AR_RX = [
   [new RegExp(`^You're down ${N}% and the trend is down \\(below the 50-day avg\\): don't average down yet, wait for the buy zone ${N}–${N}\\.$`), (m, p, a, b) => `إنت خسران ${p}% والاتجاه هابط (تحت متوسط 50 يوم): ما تعملش متوسط دلوقتي، استنى منطقة الشراء ${a}–${b}.`],
   [new RegExp(`^You're down ${N}% and the price is making new lows \\(no support below\\): don't average down until it stops falling\\.$`), (m, p) => `إنت خسران ${p}% والسهم لسه بيعمل أسعار أقل (مفيش دعم تحته): ما تعملش متوسط لحد ما يبطل ينزل.`],
   [new RegExp(`^You're down ${N}% but the trend is up: hold; if you want to average down, wait for the buy zone ${N}–${N}\\.$`), (m, p, a, b) => `إنت خسران ${p}% بس الاتجاه صاعد: احتفظ؛ ولو عايز تعمل متوسط، استنى منطقة الشراء ${a}–${b}.`],
+  [new RegExp(`^You're (up|down) ${N}%: hold, still below fair value ${N}–${N}; sell if it closes below the stop ${N}\\.$`), (m, u, p, a, b, s) => `إنت ${u === 'up' ? 'كسبان' : 'خسران'} ${p}%: احتفظ، السعر لسه تحت القيمة العادلة ${a}–${b}؛ بيع لو قفل تحت وقف الخسارة ${s}.`],
   [new RegExp(`^You're (up|down) ${N}%: hold(?:, Target 1 is ${N})?; sell if it closes below the stop ${N}\\.$`), (m, u, p, t, s) => `إنت ${u === 'up' ? 'كسبان' : 'خسران'} ${p}%: احتفظ${t ? `، والهدف الأول ${t}` : ''}؛ بيع لو قفل تحت وقف الخسارة ${s}.`],
   [new RegExp(`^You're down ${N}% and the price is in the buy zone \\(${N}–${N}\\) with risk/reward 1 : ${N}: buying more here lowers your average(; trend is still down, so add in small steps and respect the stop)?\\.$`), (m, p, a, b, r, d) => `إنت خسران ${p}% والسعر في منطقة الشراء (${a}–${b}) والمخاطرة للعائد 1 : ${r}: لو اشتريت هنا متوسطك هينزل${d ? '؛ بس الاتجاه لسه هابط، فاشتري بكميات صغيرة والتزم بوقف الخسارة' : ''}.`],
   [new RegExp(`^Price ${N} fell below the stop-loss ${N}: the plan broke, so reduce or exit to keep the loss from growing\\.$`), (m, p, s) => `السعر ${p} نزل تحت وقف الخسارة ${s}: الخطة باظت، قلّل أو اخرج عشان الخسارة ما تكبرش.`],
@@ -658,13 +659,19 @@ function signalOf(s, r) {
   return { cls: r.now.side, label: r.now.side, why: r.now.why, mine: false };
 }
 
+const TIP = {
+  'Fair value': 'القيمة العادلة: ربح السهم في آخر 12 شهر × مكرر الربحية (P/E) اللي السهم اتداول بيه في آخر 4 أرباع. تحتها = السهم رخيص بالنسبة لتاريخه، فوقها = غالي. معادلة مش محلل، وبتتأخر مع الشركات اللي أرباحها بتكبر بسرعة.',
+  'Next ceiling': 'السقف الجاي: أقرب سعر السهم رجع منه ونزل قبل كده. ممكن يقف عنده شوية، مش لازم تبيع عنده لو هدفك طويل.',
+  'Stop-loss': 'وقف الخسارة: لو السهم قفل تحت السعر ده، الخطة باظت والأفضل تقلل الكمية.',
+};
 // Exact prices under the signal, one colored line each: take profit / target, stop-loss, buy or average-down zone.
 function levelsOf(s, r) {
   const pl = r.plan; if (!pl) return '';
   const p = posOf(s, r.sym), zone = pl.buyLo != null ? `${fmt(pl.buyLo)} – ${fmt(pl.buyHi)}` : '—';
-  const ln = (c, label, v) => `<div class="lv" style="--c:${c}"><span>${label}</span><b>${v}</b></div>`;
+  const ln = (c, label, v, tip = TIP[label]) => `<div class="lv" style="--c:${c}"${tip ? ` title="${esc(tip)}"` : ''}><span>${label}</span><b>${v}</b></div>`;
   const buy = p ? (pl.buyHi != null && pl.buyHi < p.avg ? 'Average down' : 'Buy more') : 'Buy zone';
-  return `<div class="lvls">${ln('var(--accent)', p ? 'Take profit' : 'Target 1', pl.t1 != null ? fmt(pl.t1) : '—')}${ln(p ? 'var(--notheld)' : 'var(--buy)', buy, zone)}${ln('var(--sell)', 'Stop-loss', fmt(pl.stop))}</div>`;
+  const fv = s?.fair?.[r.sym];
+  return `<div class="lvls">${fv ? ln('var(--fair)', 'Fair value', `${fmt(fv.lo)} – ${fmt(fv.hi)}`) : ''}${ln('var(--accent)', 'Next ceiling', pl.t1 != null ? fmt(pl.t1) : '—')}${ln(p ? 'var(--notheld)' : 'var(--buy)', buy, zone)}${ln('var(--sell)', 'Stop-loss', fmt(pl.stop))}</div>`;
 }
 
 // ---- Money helpers, logos, per-stock P&L, net-worth card ----

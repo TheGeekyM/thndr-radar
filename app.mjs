@@ -9,7 +9,7 @@ import { networkInterfaces } from 'node:os';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { advise, analyze, autoSignals, backtest, longTermScore, shortTermScore, firebaseIdToken, history, RULE_TYPES, ruleHit, ruleText, telegram, thndr } from './alerts.mjs';
+import { advise, analyze, autoSignals, backtest, fairValue, longTermScore, shortTermScore, firebaseIdToken, history, RULE_TYPES, ruleHit, ruleText, telegram, thndr } from './alerts.mjs';
 
 // ponytail: reuse the QR library thndr-mcp already ships instead of adding our own dependency.
 // Defaults so a packaged app needs no env vars: bundled thndr CLI, and on Windows data in %APPDATA%\ThndrRadar.
@@ -29,7 +29,9 @@ const saveJson = (name, data) => writeFileSync(dataFile(name), JSON.stringify(da
 const config = { symbols: ['COMI'], telegramToken: '', telegramChat: '', rules: {}, ...readJson('config.json', {}) };
 saveJson('config.json', config);
 let log = readJson('alerts-log.json', []);
-const state = { rows: [], errors: {}, lastRun: null, held: [], avgCost: {}, positions: {} };
+const state = { rows: [], errors: {}, lastRun: null, held: [], avgCost: {}, positions: {}, fair: {} };
+// Rows are rebuilt by analyze() on every price tick; fair value (daily data) is joined in where advice is computed.
+const withFair = (row) => (row && state.fair[row.sym] ? { ...row, fair: state.fair[row.sym] } : row);
 const cache = {}; // sym -> { closes, lastDay } from the last full run, used for live updates
 
 function cairo(now = new Date()) {
@@ -95,7 +97,7 @@ function checkRules(row) {
   const { day } = cairo();
   // Automatic plan alerts for every stock on the list (no setup needed): buy zone, stop-loss, Target 1, break-even.
   if (config.autoAlerts !== false) {
-    for (const a of autoSignals(row, state.positions[row.sym])) fire(`${day}:${row.sym}:auto:${a.kind}`, row.sym, a.side, row.price, a.why);
+    for (const a of autoSignals(withFair(row), state.positions[row.sym])) fire(`${day}:${row.sym}:auto:${a.kind}`, row.sym, a.side, row.price, a.why);
   }
   for (const r of config.rules[row.sym] ?? []) {
     if (ruleHit(r, row)) fire(`${day}:${row.sym}:rule:${r.id}`, row.sym, r.side, row.price, `${r.note || 'Your alert'}: ${ruleText(r)}`);
@@ -188,7 +190,7 @@ const ADVICE_NAME = { SELL: 'Sell / reduce', TAKE_PROFIT: 'Take profit', AVERAGE
 function adviceAlerts(day) {
   let changed = false;
   for (const sym of state.held) {
-    const row = state.rows.find((r) => r.sym === sym), a = row && advise(row, state.positions[sym]);
+    const row = state.rows.find((r) => r.sym === sym), a = row && advise(withFair(row), state.positions[sym]);
     if (!a || adviceState[sym] === a.action) continue;
     const first = !(sym in adviceState);
     fire(`${day}:${sym}:advice:${a.action}`, sym, ADVICE_SIDE[a.action], row.price, `Your position: ${ADVICE_NAME[a.action]}. ${a.why}`, { silent: first });
@@ -322,18 +324,28 @@ async function gentle(args) {
   return null;
 }
 async function closesOf(sym) {
+  return (await barsOf(sym)).map((b) => b.close);
+}
+// ~15 months of daily candles (enough to reach back 4 quarter-ends for fair value), cached 1 h.
+async function barsOf(sym) {
   const hit = histCache.get(sym);
-  if (hit && Date.now() - hit.at < 3_600_000) return hit.closes;
-  const j = await gentle(['get-price-history', sym, '--resolution=1d', '--bars=300']);
+  if (hit && Date.now() - hit.at < 3_600_000) return hit.bars;
+  const j = await gentle(['get-price-history', sym, '--resolution=1d', '--bars=330']);
   if (!j) throw new Error('no history');
-  const closes = (j.candles ?? j.points).map((b) => b.close);
-  histCache.set(sym, { at: Date.now(), closes });
-  return closes;
+  const bars = j.candles ?? j.points;
+  histCache.set(sym, { at: Date.now(), bars });
+  return bars;
+}
+// Fair value per watched stock (alerts.mjs fairValue); financials cached 24 h, candles 1 h, so this is cheap after the first run.
+async function updateFair() {
+  for (const sym of config.symbols) {
+    try { state.fair[sym] = fairValue(await financialsOf(sym), await barsOf(sym)); } catch (e) { console.error(`fair ${sym}:`, e.message); }
+  }
 }
 async function financialsOf(sym) {
   const hit = finCache.get(sym);
   if (hit && Date.now() - hit.at < 86_400_000) return hit.data;
-  const data = await gentle(['get-financials', `--symbol=${sym}`, '--compare-to-sector', '--periods=1']);
+  const data = await gentle(['get-financials', `--symbol=${sym}`, '--compare-to-sector', '--periods=4']);
   if (data) finCache.set(sym, { at: Date.now(), data });
   return data;
 }
@@ -436,6 +448,7 @@ function run() {
     if (authFail && !authNotified) notify('⚠️ Thndr Radar: login expired', 'Prices and alerts are paused. Open the app and log in to Thndr again.');
     authNotified = authFail;
     if (!authFail) {
+      await updateFair();
       await volumeSpikes(day).catch((e) => console.error('volume:', e.message));
       syncStreams();
       adviceAlerts(day);
@@ -593,7 +606,7 @@ async function body(req) {
 }
 
 // Advice for each stock you hold, recomputed with the live price on every request.
-const advice = () => Object.fromEntries(state.rows.filter((r) => state.positions[r.sym]).map((r) => [r.sym, advise(r, state.positions[r.sym])]));
+const advice = () => Object.fromEntries(state.rows.filter((r) => state.positions[r.sym]).map((r) => [r.sym, advise(withFair(r), state.positions[r.sym])]));
 const snapshot = () => ({
   ...state, advice: advice(), log, rules: config.rules, order: config.symbols, push: !!config.ntfyTopic, logos, netHistory, remote: !!config.remote?.enabled, running: !!running, market: cairo().open, telegram: !!(config.telegramToken && config.telegramChat),
 });
